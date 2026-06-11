@@ -79,24 +79,26 @@ export default function ChatView({ chat, onBack }: Props) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
     setSending(true);
-    try {
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
         const dataUrl = ev.target?.result as string;
         const base64 = dataUrl.split(",")[1];
         const msg = await sendPhoto(chat.id, base64, file.type);
         addMessage(msg);
+      } catch {
+        /* silent */
+      } finally {
         setSending(false);
-      };
-      reader.readAsDataURL(file);
-    } catch {
-      setSending(false);
-    }
+      }
+    };
+    reader.onerror = () => setSending(false);
+    reader.readAsDataURL(file);
   };
 
   return (
