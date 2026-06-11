@@ -1,0 +1,276 @@
+"""Чаты и сообщения семейного мессенджера Семейка"""
+import json
+import os
+import psycopg2
+from datetime import datetime
+
+SCHEMA = "t_p3482084_react_native_family_"
+
+def get_db():
+    return psycopg2.connect(os.environ["DATABASE_URL"])
+
+def cors():
+    return {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, X-Session-Id",
+    }
+
+def get_user_by_session(cur, token):
+    cur.execute(f"""
+        SELECT u.id, u.username, u.display_name, u.role, u.avatar
+        FROM {SCHEMA}.sessions s
+        JOIN {SCHEMA}.users u ON u.id = s.user_id
+        WHERE s.token = %s AND s.expires_at > NOW()
+    """, (token,))
+    return cur.fetchone()
+
+def handler(event: dict, context) -> dict:
+    """Управление чатами и сообщениями: list_chats, get_messages, send_message, create_chat, create_direct"""
+    if event.get("httpMethod") == "OPTIONS":
+        return {"statusCode": 200, "headers": cors(), "body": ""}
+
+    method = event.get("httpMethod", "GET")
+    body = {}
+    if event.get("body"):
+        try:
+            raw = json.loads(event["body"])
+            body = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            pass
+
+    headers = event.get("headers", {}) or {}
+    token = headers.get("X-Session-Id") or (event.get("queryStringParameters") or {}).get("session")
+    action = body.get("action") or (event.get("queryStringParameters") or {}).get("action", "")
+
+    if not token:
+        return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Не авторизован"})}
+
+    conn = get_db()
+    cur = conn.cursor()
+    caller = get_user_by_session(cur, token)
+    if not caller:
+        conn.close()
+        return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Сессия истекла"})}
+
+    caller_id = caller[0]
+
+    # list_chats — список чатов пользователя
+    if action == "list_chats":
+        cur.execute(f"""
+            SELECT
+                c.id, c.name, c.is_group, c.avatar,
+                m.text AS last_text,
+                mu.display_name AS last_author,
+                m.created_at AS last_at,
+                (
+                    SELECT COUNT(*) FROM {SCHEMA}.messages m2
+                    WHERE m2.chat_id = c.id
+                    AND m2.user_id != %s
+                    AND m2.created_at > COALESCE(
+                        (SELECT MAX(m3.created_at) FROM {SCHEMA}.messages m3
+                         WHERE m3.chat_id = c.id AND m3.user_id = %s), '2000-01-01'
+                    )
+                ) AS unread
+            FROM {SCHEMA}.chats c
+            JOIN {SCHEMA}.chat_members cm ON cm.chat_id = c.id AND cm.user_id = %s
+            LEFT JOIN LATERAL (
+                SELECT text, user_id, created_at FROM {SCHEMA}.messages
+                WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1
+            ) m ON TRUE
+            LEFT JOIN {SCHEMA}.users mu ON mu.id = m.user_id
+            ORDER BY COALESCE(m.created_at, c.created_at) DESC
+        """, (caller_id, caller_id, caller_id))
+        rows = cur.fetchall()
+
+        # For direct chats — get the other person's name/avatar
+        chats = []
+        for row in rows:
+            chat_id, name, is_group, avatar, last_text, last_author, last_at, unread = row
+            display_name = name
+            display_avatar = avatar
+            if not is_group:
+                cur.execute(f"""
+                    SELECT u.display_name, u.avatar FROM {SCHEMA}.chat_members cm
+                    JOIN {SCHEMA}.users u ON u.id = cm.user_id
+                    WHERE cm.chat_id = %s AND cm.user_id != %s LIMIT 1
+                """, (chat_id, caller_id))
+                other = cur.fetchone()
+                if other:
+                    display_name = other[0]
+                    display_avatar = other[1] or "👤"
+
+            time_str = ""
+            if last_at:
+                now = datetime.utcnow()
+                delta = now - last_at.replace(tzinfo=None)
+                if delta.days == 0:
+                    time_str = last_at.strftime("%H:%M")
+                elif delta.days == 1:
+                    time_str = "Вчера"
+                elif delta.days < 7:
+                    days = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"]
+                    time_str = days[last_at.weekday()]
+                else:
+                    time_str = last_at.strftime("%d.%m")
+
+            chats.append({
+                "id": chat_id,
+                "name": display_name,
+                "avatar": display_avatar,
+                "isGroup": is_group,
+                "lastText": last_text or "",
+                "lastAuthor": last_author or "",
+                "lastAt": time_str,
+                "unread": int(unread or 0),
+            })
+
+        conn.close()
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"chats": chats})}
+
+    # get_messages — сообщения чата
+    if action == "get_messages":
+        chat_id = body.get("chatId") or (event.get("queryStringParameters") or {}).get("chatId")
+        if not chat_id:
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Нет chatId"})}
+
+        # Проверяем что пользователь — участник чата
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.chat_members WHERE chat_id = %s AND user_id = %s", (chat_id, caller_id))
+        if not cur.fetchone():
+            conn.close()
+            return {"statusCode": 403, "headers": cors(), "body": json.dumps({"error": "Нет доступа к чату"})}
+
+        since = body.get("since") or (event.get("queryStringParameters") or {}).get("since")
+        if since:
+            cur.execute(f"""
+                SELECT m.id, m.text, m.created_at, u.id, u.display_name, u.avatar
+                FROM {SCHEMA}.messages m
+                JOIN {SCHEMA}.users u ON u.id = m.user_id
+                WHERE m.chat_id = %s AND m.id > %s
+                ORDER BY m.created_at ASC
+            """, (chat_id, int(since)))
+        else:
+            cur.execute(f"""
+                SELECT m.id, m.text, m.created_at, u.id, u.display_name, u.avatar
+                FROM {SCHEMA}.messages m
+                JOIN {SCHEMA}.users u ON u.id = m.user_id
+                WHERE m.chat_id = %s
+                ORDER BY m.created_at ASC
+                LIMIT 100
+            """, (chat_id,))
+
+        rows = cur.fetchall()
+        messages = []
+        for r in rows:
+            msg_id, text, created_at, uid, display_name, avatar = r
+            messages.append({
+                "id": msg_id,
+                "text": text,
+                "time": created_at.strftime("%H:%M") if created_at else "",
+                "userId": uid,
+                "displayName": display_name,
+                "avatar": avatar or "👤",
+                "isMe": uid == caller_id,
+            })
+        conn.close()
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"messages": messages})}
+
+    # send_message
+    if action == "send_message":
+        chat_id = body.get("chatId")
+        text = (body.get("text") or "").strip()
+        if not chat_id or not text:
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Нет chatId или текста"})}
+
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.chat_members WHERE chat_id = %s AND user_id = %s", (chat_id, caller_id))
+        if not cur.fetchone():
+            conn.close()
+            return {"statusCode": 403, "headers": cors(), "body": json.dumps({"error": "Нет доступа к чату"})}
+
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.messages (chat_id, user_id, text) VALUES (%s, %s, %s) RETURNING id, created_at",
+            (chat_id, caller_id, text)
+        )
+        msg_id, created_at = cur.fetchone()
+        conn.commit()
+        conn.close()
+        return {
+            "statusCode": 200,
+            "headers": cors(),
+            "body": json.dumps({
+                "message": {
+                    "id": msg_id,
+                    "text": text,
+                    "time": created_at.strftime("%H:%M"),
+                    "userId": caller_id,
+                    "displayName": caller[2],
+                    "avatar": caller[4] or "👤",
+                    "isMe": True,
+                }
+            })
+        }
+
+    # create_chat — создать групповой чат
+    if action == "create_chat":
+        name = (body.get("name") or "").strip()
+        avatar = body.get("avatar", "💬")
+        member_ids = body.get("memberIds", [])
+        if not name:
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Нет названия чата"})}
+
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.chats (name, is_group, avatar, created_by) VALUES (%s, TRUE, %s, %s) RETURNING id",
+            (name, avatar, caller_id)
+        )
+        chat_id = cur.fetchone()[0]
+        all_members = list(set([caller_id] + [int(m) for m in member_ids]))
+        for uid in all_members:
+            cur.execute(f"INSERT INTO {SCHEMA}.chat_members (chat_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (chat_id, uid))
+        conn.commit()
+        conn.close()
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True, "chatId": chat_id})}
+
+    # create_direct — создать личный чат
+    if action == "create_direct":
+        target_id = body.get("targetUserId")
+        if not target_id:
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Нет targetUserId"})}
+
+        # Проверяем, нет ли уже личного чата между этими двумя
+        cur.execute(f"""
+            SELECT c.id FROM {SCHEMA}.chats c
+            JOIN {SCHEMA}.chat_members cm1 ON cm1.chat_id = c.id AND cm1.user_id = %s
+            JOIN {SCHEMA}.chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id = %s
+            WHERE c.is_group = FALSE
+            LIMIT 1
+        """, (caller_id, int(target_id)))
+        existing = cur.fetchone()
+        if existing:
+            conn.close()
+            return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True, "chatId": existing[0]})}
+
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.chats (name, is_group, avatar, created_by) VALUES (%s, FALSE, %s, %s) RETURNING id",
+            ("", "💬", caller_id)
+        )
+        chat_id = cur.fetchone()[0]
+        cur.execute(f"INSERT INTO {SCHEMA}.chat_members (chat_id, user_id) VALUES (%s, %s)", (chat_id, caller_id))
+        cur.execute(f"INSERT INTO {SCHEMA}.chat_members (chat_id, user_id) VALUES (%s, %s)", (chat_id, int(target_id)))
+        conn.commit()
+        conn.close()
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True, "chatId": chat_id})}
+
+    # get_users — список всех пользователей для создания чата
+    if action == "get_users":
+        cur.execute(f"SELECT id, display_name, avatar, city FROM {SCHEMA}.users WHERE id != %s ORDER BY display_name", (caller_id,))
+        rows = cur.fetchall()
+        conn.close()
+        users = [{"id": r[0], "displayName": r[1], "avatar": r[2] or "👤", "city": r[3] or ""} for r in rows]
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": users})}
+
+    conn.close()
+    return {"statusCode": 404, "headers": cors(), "body": json.dumps({"error": "Unknown action"})}
