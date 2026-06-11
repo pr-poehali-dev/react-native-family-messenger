@@ -1,0 +1,231 @@
+"""Авторизация пользователей семейного мессенджера"""
+import json
+import os
+import hashlib
+import secrets
+import psycopg2
+from datetime import datetime, timedelta
+
+SCHEMA = "t_p3482084_react_native_family_"
+SESSION_DURATION_DAYS = 30
+
+def get_db():
+    return psycopg2.connect(os.environ["DATABASE_URL"])
+
+def hash_password(password: str) -> str:
+    salt = hashlib.sha256(b"familychat_salt_2024").hexdigest()[:16]
+    return hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+
+def check_password(password: str, stored_hash: str) -> bool:
+    if stored_hash == hash_password(password):
+        return True
+    direct_hash = hashlib.sha256(password.encode()).hexdigest()
+    if stored_hash.endswith(direct_hash):
+        return True
+    return False
+
+def cors():
+    return {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, X-Authorization, X-Session-Id",
+    }
+
+def ensure_sessions_table(cur):
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS {SCHEMA}.sessions (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            token VARCHAR(128) UNIQUE NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+def get_user_by_session(cur, token):
+    cur.execute(f"""
+        SELECT u.id, u.username, u.display_name, u.role, u.avatar, u.bio, u.city, u.age
+        FROM {SCHEMA}.sessions s
+        JOIN {SCHEMA}.users u ON u.id = s.user_id
+        WHERE s.token = %s AND s.expires_at > NOW()
+    """, (token,))
+    return cur.fetchone()
+
+def user_dict(row):
+    return {
+        "id": row[0], "username": row[1], "displayName": row[2],
+        "role": row[3], "avatar": row[4] or "👤",
+        "bio": row[5] or "", "city": row[6] or "", "age": row[7]
+    }
+
+def handler(event: dict, context) -> dict:
+    """Авторизация: вход, выход, проверка сессии, управление пользователями (action-based)"""
+    if event.get("httpMethod") == "OPTIONS":
+        return {"statusCode": 200, "headers": cors(), "body": ""}
+
+    method = event.get("httpMethod", "GET")
+    body = {}
+    if event.get("body"):
+        try:
+            body = json.loads(event["body"])
+        except Exception:
+            pass
+
+    headers = event.get("headers", {}) or {}
+    session_token = headers.get("X-Session-Id") or (event.get("queryStringParameters") or {}).get("session")
+    action = body.get("action", "") or (event.get("queryStringParameters") or {}).get("action", "")
+
+    # login
+    if method == "POST" and action == "login":
+        username = body.get("username", "").strip().lower()
+        password = body.get("password", "")
+        if not username or not password:
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Укажите логин и пароль"})}
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT id, username, display_name, role, avatar, bio, city, age, password_hash FROM {SCHEMA}.users WHERE LOWER(username) = %s",
+            (username,)
+        )
+        row = cur.fetchone()
+        if not row or not check_password(password, row[8]):
+            conn.close()
+            return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Неверный логин или пароль"})}
+
+        user_id = row[0]
+        token = secrets.token_hex(32)
+        expires = datetime.utcnow() + timedelta(days=SESSION_DURATION_DAYS)
+        ensure_sessions_table(cur)
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
+            (user_id, token, expires)
+        )
+        conn.commit()
+        conn.close()
+        return {
+            "statusCode": 200,
+            "headers": cors(),
+            "body": json.dumps({
+                "token": token,
+                "user": {"id": row[0], "username": row[1], "displayName": row[2], "role": row[3],
+                         "avatar": row[4] or "👤", "bio": row[5] or "", "city": row[6] or "", "age": row[7]}
+            })
+        }
+
+    # me — проверка сессии
+    if method == "GET" and action == "me":
+        if not session_token:
+            return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Не авторизован"})}
+        conn = get_db()
+        cur = conn.cursor()
+        ensure_sessions_table(cur)
+        conn.commit()
+        row = get_user_by_session(cur, session_token)
+        conn.close()
+        if not row:
+            return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Сессия истекла"})}
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"user": user_dict(row)})}
+
+    # logout
+    if method == "POST" and action == "logout":
+        if session_token:
+            conn = get_db()
+            cur = conn.cursor()
+            ensure_sessions_table(cur)
+            try:
+                cur.execute(f"DELETE FROM {SCHEMA}.sessions WHERE token = %s", (session_token,))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+            conn.close()
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True})}
+
+    # create_user — только admin
+    if method == "POST" and action == "create_user":
+        if not session_token:
+            return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Не авторизован"})}
+        conn = get_db()
+        cur = conn.cursor()
+        ensure_sessions_table(cur)
+        conn.commit()
+        caller = get_user_by_session(cur, session_token)
+        if not caller or caller[3] != "admin":
+            conn.close()
+            return {"statusCode": 403, "headers": cors(), "body": json.dumps({"error": "Нет доступа"})}
+
+        username = body.get("username", "").strip().lower()
+        display_name = body.get("displayName", "").strip()
+        password = body.get("password", "").strip()
+        role = body.get("role", "member")
+        avatar = body.get("avatar", "👤")
+        bio = body.get("bio", "")
+        city = body.get("city", "")
+        age = body.get("age")
+
+        if not username or not display_name or not password:
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Заполните все поля"})}
+
+        try:
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.users (username, display_name, password_hash, role, avatar, bio, city, age) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (username, display_name, hash_password(password), role, avatar, bio, city, age)
+            )
+            new_id = cur.fetchone()[0]
+            conn.commit()
+            conn.close()
+            return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True, "id": new_id})}
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            if "unique" in str(e).lower():
+                return {"statusCode": 409, "headers": cors(), "body": json.dumps({"error": "Такой логин уже существует"})}
+            raise
+
+    # list_users — только admin
+    if method == "GET" and action == "list_users":
+        if not session_token:
+            return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Не авторизован"})}
+        conn = get_db()
+        cur = conn.cursor()
+        ensure_sessions_table(cur)
+        conn.commit()
+        caller = get_user_by_session(cur, session_token)
+        if not caller or caller[3] != "admin":
+            conn.close()
+            return {"statusCode": 403, "headers": cors(), "body": json.dumps({"error": "Нет доступа"})}
+        cur.execute(f"SELECT id, username, display_name, role, avatar, city, age, created_at FROM {SCHEMA}.users ORDER BY id")
+        rows = cur.fetchall()
+        conn.close()
+        users = [
+            {"id": r[0], "username": r[1], "displayName": r[2], "role": r[3],
+             "avatar": r[4] or "👤", "city": r[5] or "", "age": r[6], "createdAt": str(r[7])}
+            for r in rows
+        ]
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": users})}
+
+    # delete_user — только admin
+    if method == "POST" and action == "delete_user":
+        if not session_token:
+            return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Не авторизован"})}
+        target_id = body.get("userId")
+        if not target_id:
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Не указан userId"})}
+        conn = get_db()
+        cur = conn.cursor()
+        ensure_sessions_table(cur)
+        conn.commit()
+        caller = get_user_by_session(cur, session_token)
+        if not caller or caller[3] != "admin":
+            conn.close()
+            return {"statusCode": 403, "headers": cors(), "body": json.dumps({"error": "Нет доступа"})}
+        if caller[0] == target_id:
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Нельзя удалить себя"})}
+        cur.execute(f"DELETE FROM {SCHEMA}.users WHERE id = %s", (target_id,))
+        conn.commit()
+        conn.close()
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True})}
+
+    return {"statusCode": 404, "headers": cors(), "body": json.dumps({"error": "Unknown action"})}

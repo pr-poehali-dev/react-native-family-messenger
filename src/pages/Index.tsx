@@ -5,6 +5,8 @@ import FamilyScreen from "@/components/FamilyScreen";
 import GalleryScreen from "@/components/GalleryScreen";
 import FilesScreen from "@/components/FilesScreen";
 import ProfileScreen from "@/components/ProfileScreen";
+import LoginScreen from "@/components/LoginScreen";
+import { useAuth } from "@/lib/AuthContext";
 
 type Tab = "chats" | "family" | "gallery" | "files" | "profile";
 
@@ -18,6 +20,25 @@ const tabs: { id: Tab; icon: string; label: string }[] = [
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<Tab>("chats");
+  const { user, loading } = useAuth();
+
+  // Загрузка сессии
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center max-w-md mx-auto"
+        style={{ background: "linear-gradient(160deg, hsl(35,60%,96%), hsl(340,40%,94%))" }}>
+        <div className="flex flex-col items-center gap-4 animate-fade-in">
+          <div className="text-5xl">👨‍👩‍👧‍👦</div>
+          <Icon name="Loader2" size={28} style={{ color: "hsl(22,85%,62%)" }} className="animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  // Не авторизован — показываем экран входа
+  if (!user) {
+    return <LoginScreen />;
+  }
 
   return (
     <div className="flex flex-col h-screen max-w-md mx-auto bg-background overflow-hidden relative">

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
+import { useAuth } from "@/lib/AuthContext";
+import AdminPanel from "@/components/AdminPanel";
 
 const stats = [
   { label: "Сообщений", value: "1 248", icon: "MessageCircle" },
@@ -12,11 +14,16 @@ const settings = [
   { icon: "Lock", label: "Конфиденциальность", desc: "Пароль и безопасность", color: "hsl(200,55%,87%)" },
   { icon: "Palette", label: "Внешний вид", desc: "Тема и оформление", color: "hsl(270,40%,88%)" },
   { icon: "HelpCircle", label: "Помощь", desc: "FAQ и поддержка", color: "hsl(140,35%,87%)" },
-  { icon: "Share2", label: "Пригласить в семью", desc: "Поделиться ссылкой", color: "hsl(35,65%,87%)" },
 ];
 
 export default function ProfileScreen() {
+  const { user, logout } = useAuth();
   const [notificationsOn, setNotificationsOn] = useState(true);
+  const [showAdmin, setShowAdmin] = useState(false);
+
+  if (showAdmin) {
+    return <AdminPanel onBack={() => setShowAdmin(false)} />;
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -41,8 +48,8 @@ export default function ProfileScreen() {
           >
             <div className="flex items-center gap-4">
               <div className="relative">
-                <div className="w-18 h-18 w-[72px] h-[72px] rounded-2xl bg-white/20 flex items-center justify-center text-4xl border-2 border-white/40">
-                  🧒
+                <div className="w-[72px] h-[72px] rounded-2xl bg-white/20 flex items-center justify-center text-4xl border-2 border-white/40">
+                  {user?.avatar || "👤"}
                 </div>
                 <button
                   className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-white flex items-center justify-center"
@@ -52,14 +59,18 @@ export default function ProfileScreen() {
                 </button>
               </div>
               <div className="flex-1">
-                <p className="text-white text-xl" style={{ fontWeight: 800 }}>Саша Иванов</p>
-                <p className="text-white/80 text-sm mt-0.5">@sasha_ivanov</p>
-                <p className="text-white/70 text-xs mt-1">Москва · 24 года</p>
+                <p className="text-white text-xl" style={{ fontWeight: 800 }}>{user?.displayName || "Гость"}</p>
+                <p className="text-white/80 text-sm mt-0.5">@{user?.username || "—"}</p>
+                <p className="text-white/70 text-xs mt-1">
+                  {[user?.city, user?.age ? `${user.age} лет` : null].filter(Boolean).join(" · ") || "—"}
+                </p>
               </div>
             </div>
-            <div className="mt-4 bg-white/15 rounded-2xl px-3 py-2.5">
-              <p className="text-white text-sm">🎵 Музыкант, путешественник и просто хороший человек</p>
-            </div>
+            {user?.bio && (
+              <div className="mt-4 bg-white/15 rounded-2xl px-3 py-2.5">
+                <p className="text-white text-sm">{user.bio}</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -87,10 +98,8 @@ export default function ProfileScreen() {
             className="bg-white rounded-3xl px-4 py-3.5 flex items-center gap-3 animate-slide-up stagger-3"
             style={{ boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}
           >
-            <div
-              className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
-              style={{ background: "hsl(340,55%,88%)" }}
-            >
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+              style={{ background: "hsl(340,55%,88%)" }}>
               <Icon name="Bell" size={18} style={{ color: "hsl(340,55%,50%)" }} />
             </div>
             <div className="flex-1">
@@ -100,9 +109,7 @@ export default function ProfileScreen() {
             <button
               onClick={() => setNotificationsOn(!notificationsOn)}
               className="w-12 h-7 rounded-full transition-all duration-300 relative flex-shrink-0"
-              style={{
-                background: notificationsOn ? "hsl(22,85%,62%)" : "hsl(35,25%,82%)",
-              }}
+              style={{ background: notificationsOn ? "hsl(22,85%,62%)" : "hsl(35,25%,82%)" }}
             >
               <div
                 className="absolute top-1 w-5 h-5 rounded-full bg-white transition-all duration-300"
@@ -114,16 +121,14 @@ export default function ProfileScreen() {
             </button>
           </div>
 
-          {settings.slice(1).map((s, i) => (
+          {settings.map((s, i) => (
             <button
               key={s.label}
               className={`w-full bg-white rounded-3xl px-4 py-3.5 flex items-center gap-3 hover:bg-muted/30 transition-colors animate-slide-up stagger-${Math.min(i + 4, 6)}`}
               style={{ boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}
             >
-              <div
-                className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
-                style={{ background: s.color }}
-              >
+              <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+                style={{ background: s.color }}>
                 <Icon name={s.icon} size={18} style={{ color: "hsl(22,50%,45%)" }} />
               </div>
               <div className="flex-1 text-left">
@@ -134,8 +139,28 @@ export default function ProfileScreen() {
             </button>
           ))}
 
+          {/* Admin panel — только для admin */}
+          {user?.role === "admin" && (
+            <button
+              onClick={() => setShowAdmin(true)}
+              className="w-full bg-white rounded-3xl px-4 py-3.5 flex items-center gap-3 hover:bg-muted/30 transition-colors animate-slide-up stagger-5"
+              style={{ boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}
+            >
+              <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "hsl(22,80%,90%)" }}>
+                <Icon name="Shield" size={18} style={{ color: "hsl(22,85%,50%)" }} />
+              </div>
+              <div className="flex-1 text-left">
+                <p className="text-sm text-foreground" style={{ fontWeight: 600 }}>Управление семьёй</p>
+                <p className="text-xs text-muted-foreground">Добавить/удалить участника</p>
+              </div>
+              <Icon name="ChevronRight" size={16} style={{ color: "hsl(25,15%,65%)" }} />
+            </button>
+          )}
+
           {/* Logout */}
           <button
+            onClick={logout}
             className="w-full bg-white rounded-3xl px-4 py-3.5 flex items-center gap-3 hover:bg-red-50 transition-colors mt-2 animate-slide-up stagger-6"
             style={{ boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}
           >
