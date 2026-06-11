@@ -1,6 +1,9 @@
 """Чаты и сообщения семейного мессенджера Семейка"""
 import json
 import os
+import base64
+import secrets
+import boto3
 import psycopg2
 from datetime import datetime
 
@@ -144,7 +147,7 @@ def handler(event: dict, context) -> dict:
         since = body.get("since") or (event.get("queryStringParameters") or {}).get("since")
         if since:
             cur.execute(f"""
-                SELECT m.id, m.text, m.created_at, u.id, u.display_name, u.avatar
+                SELECT m.id, m.text, m.image_url, m.created_at, u.id, u.display_name, u.avatar
                 FROM {SCHEMA}.messages m
                 JOIN {SCHEMA}.users u ON u.id = m.user_id
                 WHERE m.chat_id = %s AND m.id > %s
@@ -152,7 +155,7 @@ def handler(event: dict, context) -> dict:
             """, (chat_id, int(since)))
         else:
             cur.execute(f"""
-                SELECT m.id, m.text, m.created_at, u.id, u.display_name, u.avatar
+                SELECT m.id, m.text, m.image_url, m.created_at, u.id, u.display_name, u.avatar
                 FROM {SCHEMA}.messages m
                 JOIN {SCHEMA}.users u ON u.id = m.user_id
                 WHERE m.chat_id = %s
@@ -163,10 +166,11 @@ def handler(event: dict, context) -> dict:
         rows = cur.fetchall()
         messages = []
         for r in rows:
-            msg_id, text, created_at, uid, display_name, avatar = r
+            msg_id, text, image_url, created_at, uid, display_name, avatar = r
             messages.append({
                 "id": msg_id,
                 "text": text,
+                "imageUrl": image_url,
                 "time": created_at.strftime("%H:%M") if created_at else "",
                 "userId": uid,
                 "displayName": display_name,
@@ -203,6 +207,61 @@ def handler(event: dict, context) -> dict:
                 "message": {
                     "id": msg_id,
                     "text": text,
+                    "imageUrl": None,
+                    "time": created_at.strftime("%H:%M"),
+                    "userId": caller_id,
+                    "displayName": caller[2],
+                    "avatar": caller[4] or "👤",
+                    "isMe": True,
+                }
+            })
+        }
+
+    # send_photo — загрузка фото и отправка в чат
+    if action == "send_photo":
+        chat_id = body.get("chatId")
+        image_b64 = body.get("imageBase64")
+        image_type = body.get("imageType", "image/jpeg")
+        caption = (body.get("caption") or "").strip()
+
+        if not chat_id or not image_b64:
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Нет chatId или фото"})}
+
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.chat_members WHERE chat_id = %s AND user_id = %s", (chat_id, caller_id))
+        if not cur.fetchone():
+            conn.close()
+            return {"statusCode": 403, "headers": cors(), "body": json.dumps({"error": "Нет доступа к чату"})}
+
+        image_data = base64.b64decode(image_b64)
+        ext = "jpg" if "jpeg" in image_type else image_type.split("/")[-1]
+        key = f"chat_photos/chat_{chat_id}_{secrets.token_hex(8)}.{ext}"
+
+        s3 = boto3.client(
+            "s3",
+            endpoint_url="https://bucket.poehali.dev",
+            aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+        )
+        s3.put_object(Bucket="files", Key=key, Body=image_data, ContentType=image_type)
+        image_url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+
+        text = caption or "📷 Фото"
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.messages (chat_id, user_id, text, image_url) VALUES (%s, %s, %s, %s) RETURNING id, created_at",
+            (chat_id, caller_id, text, image_url)
+        )
+        msg_id, created_at = cur.fetchone()
+        conn.commit()
+        conn.close()
+        return {
+            "statusCode": 200,
+            "headers": cors(),
+            "body": json.dumps({
+                "message": {
+                    "id": msg_id,
+                    "text": text,
+                    "imageUrl": image_url,
                     "time": created_at.strftime("%H:%M"),
                     "userId": caller_id,
                     "displayName": caller[2],

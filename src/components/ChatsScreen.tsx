@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import {
   Chat, Message,
-  listChats, getMessages, sendMessage,
+  listChats, getMessages, sendMessage, sendPhoto,
   createDirect, createGroupChat, getChatUsers,
 } from "@/lib/api";
 
@@ -12,12 +12,20 @@ function ChatView({ chat, onBack }: { chat: Chat; onBack: () => void }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const lastIdRef = useRef<number>(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = (smooth = false) =>
     bottomRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "instant" });
+
+  const addMessage = (msg: Message) => {
+    setMessages((prev) => [...prev, msg]);
+    lastIdRef.current = msg.id;
+    setTimeout(() => scrollToBottom(true), 30);
+  };
 
   const loadMessages = useCallback(async (initial = false) => {
     try {
@@ -54,9 +62,7 @@ function ChatView({ chat, onBack }: { chat: Chat; onBack: () => void }) {
     setSending(true);
     try {
       const msg = await sendMessage(chat.id, text);
-      setMessages((prev) => [...prev, msg]);
-      lastIdRef.current = msg.id;
-      setTimeout(() => scrollToBottom(true), 30);
+      addMessage(msg);
     } catch {
       setInput(text);
     } finally {
@@ -68,6 +74,28 @@ function ChatView({ chat, onBack }: { chat: Chat; onBack: () => void }) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setSending(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const dataUrl = ev.target?.result as string;
+        const base64 = dataUrl.split(",")[1];
+        const msg = await sendPhoto(chat.id, base64, file.type);
+        addMessage(msg);
+        setSending(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setSending(false);
+    }
+  };
+
+  const avatarIsUrl = (av: string) => av?.startsWith("http");
+
   return (
     <div className="flex flex-col h-full animate-fade-in">
       {/* Header */}
@@ -76,9 +104,11 @@ function ChatView({ chat, onBack }: { chat: Chat; onBack: () => void }) {
         <button onClick={onBack} className="p-1.5 rounded-full hover:bg-muted transition-colors">
           <Icon name="ArrowLeft" size={20} style={{ color: "hsl(22,85%,58%)" }} />
         </button>
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0"
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0 overflow-hidden"
           style={{ background: "hsl(35,45%,90%)" }}>
-          {chat.avatar}
+          {avatarIsUrl(chat.avatar)
+            ? <img src={chat.avatar} className="w-full h-full object-cover" alt="" />
+            : chat.avatar}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-foreground truncate text-[15px]" style={{ fontWeight: 700 }}>{chat.name}</p>
@@ -86,9 +116,6 @@ function ChatView({ chat, onBack }: { chat: Chat; onBack: () => void }) {
             {chat.isGroup ? "Групповой чат" : "Личные сообщения"}
           </p>
         </div>
-        <button className="p-1.5 rounded-full hover:bg-muted transition-colors">
-          <Icon name="Phone" size={20} style={{ color: "hsl(22,85%,58%)" }} />
-        </button>
       </div>
 
       {/* Messages */}
@@ -115,14 +142,18 @@ function ChatView({ chat, onBack }: { chat: Chat; onBack: () => void }) {
                 const prev = messages[i - 1];
                 const showAvatar = !msg.isMe && (!prev || prev.userId !== msg.userId);
                 const showName = chat.isGroup && showAvatar;
+                const hasImage = !!msg.imageUrl;
+                const isTextOnly = !hasImage;
                 return (
                   <div key={msg.id}
                     className="flex items-end gap-2"
                     style={{ justifyContent: msg.isMe ? "flex-end" : "flex-start", marginBottom: 2 }}>
                     {!msg.isMe && (
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0 mb-0.5"
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0 mb-0.5 overflow-hidden"
                         style={{ background: "hsl(35,45%,90%)", visibility: showAvatar ? "visible" : "hidden" }}>
-                        {msg.avatar}
+                        {avatarIsUrl(msg.avatar)
+                          ? <img src={msg.avatar} className="w-full h-full object-cover" alt="" />
+                          : msg.avatar}
                       </div>
                     )}
                     <div className="max-w-[72%]">
@@ -131,14 +162,42 @@ function ChatView({ chat, onBack }: { chat: Chat; onBack: () => void }) {
                           {msg.displayName}
                         </p>
                       )}
-                      <div className={msg.isMe ? "bubble-me" : "bubble-them"} style={{ padding: "8px 14px" }}>
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-                        <p className="text-[10px] mt-1 text-right flex items-center justify-end gap-1"
-                          style={{ color: msg.isMe ? "rgba(255,255,255,0.7)" : "hsl(25,15%,60%)" }}>
-                          {msg.time}
-                          {msg.isMe && <Icon name="CheckCheck" size={12} style={{ color: "rgba(255,255,255,0.8)" }} />}
-                        </p>
-                      </div>
+                      {hasImage ? (
+                        <div className={`overflow-hidden ${msg.isMe ? "rounded-[18px_18px_4px_18px]" : "rounded-[18px_18px_18px_4px]"}`}
+                          style={{ boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}>
+                          <button onClick={() => setLightboxUrl(msg.imageUrl!)}>
+                            <img
+                              src={msg.imageUrl!}
+                              alt="фото"
+                              className="block max-w-[220px] w-full object-cover"
+                              style={{ maxHeight: 260 }}
+                            />
+                          </button>
+                          {msg.text && msg.text !== "📷 Фото" && (
+                            <div className={msg.isMe ? "bubble-me" : "bubble-them"}
+                              style={{ padding: "6px 12px", borderRadius: 0 }}>
+                              <p className="text-sm leading-relaxed">{msg.text}</p>
+                            </div>
+                          )}
+                          <div className={`px-3 py-1 flex items-center justify-end gap-1 ${msg.isMe ? "bubble-me" : "bubble-them"}`}
+                            style={{ borderRadius: 0, padding: "2px 10px 6px" }}>
+                            <span className="text-[10px]"
+                              style={{ color: msg.isMe ? "rgba(255,255,255,0.7)" : "hsl(25,15%,60%)" }}>
+                              {msg.time}
+                            </span>
+                            {msg.isMe && <Icon name="CheckCheck" size={12} style={{ color: "rgba(255,255,255,0.8)" }} />}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={msg.isMe ? "bubble-me" : "bubble-them"} style={{ padding: "8px 14px" }}>
+                          {isTextOnly && <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>}
+                          <p className="text-[10px] mt-1 text-right flex items-center justify-end gap-1"
+                            style={{ color: msg.isMe ? "rgba(255,255,255,0.7)" : "hsl(25,15%,60%)" }}>
+                            {msg.time}
+                            {msg.isMe && <Icon name="CheckCheck" size={12} style={{ color: "rgba(255,255,255,0.8)" }} />}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -151,6 +210,15 @@ function ChatView({ chat, onBack }: { chat: Chat; onBack: () => void }) {
 
       {/* Input */}
       <div className="bg-white border-t border-border px-3 py-3 flex items-end gap-2 flex-shrink-0">
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={sending}
+          className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:bg-muted"
+        >
+          <Icon name="ImagePlus" size={20} style={{ color: sending ? "hsl(35,25%,75%)" : "hsl(22,85%,58%)" }} />
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+
         <div className="flex-1 bg-muted rounded-2xl px-4 py-2.5 flex items-end gap-2">
           <textarea
             value={input}
@@ -161,9 +229,6 @@ function ChatView({ chat, onBack }: { chat: Chat; onBack: () => void }) {
             className="flex-1 bg-transparent text-sm outline-none text-foreground placeholder:text-muted-foreground resize-none leading-relaxed"
             style={{ maxHeight: 120 }}
           />
-          <button className="flex-shrink-0 mb-0.5">
-            <Icon name="Smile" size={18} style={{ color: "hsl(25,15%,55%)" }} />
-          </button>
         </div>
         <button
           onClick={handleSend}
@@ -182,6 +247,29 @@ function ChatView({ chat, onBack }: { chat: Chat; onBack: () => void }) {
           }
         </button>
       </div>
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 animate-fade-in"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            className="absolute top-4 right-4 p-2 rounded-full"
+            style={{ background: "rgba(255,255,255,0.15)" }}
+            onClick={() => setLightboxUrl(null)}
+          >
+            <Icon name="X" size={22} style={{ color: "white" }} />
+          </button>
+          <img
+            src={lightboxUrl}
+            alt=""
+            className="max-w-full max-h-full rounded-2xl object-contain animate-pop-in"
+            style={{ maxHeight: "90vh", maxWidth: "90vw" }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

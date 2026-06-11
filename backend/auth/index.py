@@ -3,6 +3,8 @@ import json
 import os
 import hashlib
 import secrets
+import base64
+import boto3
 import psycopg2
 from datetime import datetime, timedelta
 
@@ -227,5 +229,76 @@ def handler(event: dict, context) -> dict:
         conn.commit()
         conn.close()
         return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True})}
+
+    # change_password — смена пароля текущего пользователя
+    if method == "POST" and action == "change_password":
+        if not session_token:
+            return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Не авторизован"})}
+        old_password = body.get("oldPassword", "")
+        new_password = body.get("newPassword", "").strip()
+        if not old_password or not new_password:
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Укажите старый и новый пароль"})}
+        if len(new_password) < 4:
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Пароль должен быть не короче 4 символов"})}
+        conn = get_db()
+        cur = conn.cursor()
+        ensure_sessions_table(cur)
+        conn.commit()
+        caller = get_user_by_session(cur, session_token)
+        if not caller:
+            conn.close()
+            return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Сессия истекла"})}
+        cur.execute(f"SELECT password_hash FROM {SCHEMA}.users WHERE id = %s", (caller[0],))
+        row = cur.fetchone()
+        if not row or not check_password(old_password, row[0]):
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Неверный текущий пароль"})}
+        cur.execute(f"UPDATE {SCHEMA}.users SET password_hash = %s WHERE id = %s", (hash_password(new_password), caller[0]))
+        conn.commit()
+        conn.close()
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True})}
+
+    # update_avatar — смена аватара (эмодзи или загрузка картинки)
+    if method == "POST" and action == "update_avatar":
+        if not session_token:
+            return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Не авторизован"})}
+        conn = get_db()
+        cur = conn.cursor()
+        ensure_sessions_table(cur)
+        conn.commit()
+        caller = get_user_by_session(cur, session_token)
+        if not caller:
+            conn.close()
+            return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Сессия истекла"})}
+
+        emoji = body.get("emoji")
+        image_b64 = body.get("imageBase64")
+        image_type = body.get("imageType", "image/jpeg")
+
+        if emoji:
+            cur.execute(f"UPDATE {SCHEMA}.users SET avatar = %s WHERE id = %s", (emoji, caller[0]))
+            conn.commit()
+            conn.close()
+            return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True, "avatar": emoji})}
+
+        if image_b64:
+            image_data = base64.b64decode(image_b64)
+            ext = "jpg" if "jpeg" in image_type else image_type.split("/")[-1]
+            key = f"avatars/user_{caller[0]}_{secrets.token_hex(6)}.{ext}"
+            s3 = boto3.client(
+                "s3",
+                endpoint_url="https://bucket.poehali.dev",
+                aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+            )
+            s3.put_object(Bucket="files", Key=key, Body=image_data, ContentType=image_type)
+            avatar_url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+            cur.execute(f"UPDATE {SCHEMA}.users SET avatar = %s WHERE id = %s", (avatar_url, caller[0]))
+            conn.commit()
+            conn.close()
+            return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True, "avatar": avatar_url})}
+
+        conn.close()
+        return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Нет данных для обновления"})}
 
     return {"statusCode": 404, "headers": cors(), "body": json.dumps({"error": "Unknown action"})}

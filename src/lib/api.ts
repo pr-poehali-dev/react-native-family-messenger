@@ -15,6 +15,7 @@ export type Chat = {
 export type Message = {
   id: number;
   text: string;
+  imageUrl?: string | null;
   time: string;
   userId: number;
   displayName: string;
@@ -165,4 +166,22 @@ export async function deleteUser(userId: number) {
   const { status, data } = await call("POST", "delete_user", { userId });
   if (status !== 200) throw new Error((data?.error as string) || "Ошибка удаления");
   return data;
+}
+
+export async function changePassword(oldPassword: string, newPassword: string) {
+  const { status, data } = await call("POST", "change_password", { oldPassword, newPassword });
+  if (status !== 200) throw new Error((data?.error as string) || "Ошибка смены пароля");
+  return data;
+}
+
+export async function updateAvatar(payload: { emoji?: string; imageBase64?: string; imageType?: string }): Promise<string> {
+  const { status, data } = await call("POST", "update_avatar", payload);
+  if (status !== 200) throw new Error((data?.error as string) || "Ошибка обновления аватара");
+  return data.avatar as string;
+}
+
+export async function sendPhoto(chatId: number, imageBase64: string, imageType: string, caption?: string): Promise<Message> {
+  const { status, data } = await msgCall("POST", "send_photo", { chatId, imageBase64, imageType, caption });
+  if (status !== 200) throw new Error((data?.error as string) || "Ошибка отправки фото");
+  return data.message as Message;
 }
