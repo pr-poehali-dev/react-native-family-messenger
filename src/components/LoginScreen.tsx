@@ -52,7 +52,7 @@ export default function LoginScreen() {
           >
             👨‍👩‍👧‍👦
           </div>
-          <h1 className="text-3xl text-foreground mb-1" style={{ fontWeight: 800 }}>СемьяЧат</h1>
+          <h1 className="text-3xl text-foreground mb-1" style={{ fontWeight: 800 }}>Семейка</h1>
           <p className="text-muted-foreground text-center text-sm">Ваш семейный мессенджер</p>
         </div>
 
