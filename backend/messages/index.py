@@ -323,6 +323,25 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True, "chatId": chat_id})}
 
+    # delete_chat — удалить чат (покинуть для личного, удалить для группового если создатель)
+    if action == "delete_chat":
+        chat_id = body.get("chatId")
+        if not chat_id:
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Нет chatId"})}
+
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.chat_members WHERE chat_id = %s AND user_id = %s", (int(chat_id), caller_id))
+        if not cur.fetchone():
+            conn.close()
+            return {"statusCode": 403, "headers": cors(), "body": json.dumps({"error": "Нет доступа к чату"})}
+
+        cur.execute(f"DELETE FROM {SCHEMA}.messages WHERE chat_id = %s", (int(chat_id),))
+        cur.execute(f"DELETE FROM {SCHEMA}.chat_members WHERE chat_id = %s", (int(chat_id),))
+        cur.execute(f"DELETE FROM {SCHEMA}.chats WHERE id = %s", (int(chat_id),))
+        conn.commit()
+        conn.close()
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True})}
+
     # get_users — список всех пользователей для создания чата
     if action == "get_users":
         cur.execute(f"SELECT id, display_name, avatar, city FROM {SCHEMA}.users WHERE id != %s ORDER BY display_name", (caller_id,))

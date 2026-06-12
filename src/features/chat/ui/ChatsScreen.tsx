@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "@/shared/ui/icon";
 import Avatar from "@/shared/ui/Avatar";
-import { Chat, listChats } from "@/shared/api";
+import { Chat, listChats, deleteChat } from "@/shared/api";
 import ChatView from "@/features/chat/ui/ChatView";
 import NewChatModal from "@/features/chat/ui/NewChatModal";
 
@@ -9,6 +9,138 @@ type Props = {
   pendingChatId?: number | null;
   onPendingChatHandled?: () => void;
 };
+
+function SwipeableChatRow({ chat, index, onOpen, onDelete }: {
+  chat: Chat;
+  index: number;
+  onOpen: (chat: Chat) => void;
+  onDelete: (chatId: number) => void;
+}) {
+  const [offset, setOffset] = useState(0);
+  const [swiped, setSwiped] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const startX = useRef(0);
+  const startY = useRef(0);
+  const isDragging = useRef(false);
+  const isScrolling = useRef<boolean | null>(null);
+  const DELETE_THRESHOLD = 80;
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX;
+    startY.current = e.touches[0].clientY;
+    isDragging.current = true;
+    isScrolling.current = null;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging.current) return;
+    const dx = e.touches[0].clientX - startX.current;
+    const dy = e.touches[0].clientY - startY.current;
+
+    if (isScrolling.current === null) {
+      isScrolling.current = Math.abs(dy) > Math.abs(dx);
+    }
+    if (isScrolling.current) return;
+
+    e.preventDefault();
+    if (dx > 0 && !swiped) return;
+    const base = swiped ? -DELETE_THRESHOLD : 0;
+    const newOffset = Math.max(-DELETE_THRESHOLD - 20, Math.min(0, base + dx));
+    setOffset(newOffset);
+  };
+
+  const handleTouchEnd = () => {
+    isDragging.current = false;
+    if (isScrolling.current) return;
+    if (offset < -DELETE_THRESHOLD / 2) {
+      setOffset(-DELETE_THRESHOLD);
+      setSwiped(true);
+    } else {
+      setOffset(0);
+      setSwiped(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteChat(chat.id);
+      onDelete(chat.id);
+    } catch {
+      setDeleting(false);
+      setOffset(0);
+      setSwiped(false);
+    }
+  };
+
+  const handleClick = () => {
+    if (swiped) {
+      setOffset(0);
+      setSwiped(false);
+      return;
+    }
+    onOpen(chat);
+  };
+
+  return (
+    <div className="relative overflow-hidden">
+      <div
+        className="absolute right-0 top-0 bottom-0 flex items-center justify-center"
+        style={{ width: DELETE_THRESHOLD + 20, background: "hsl(0,75%,58%)" }}
+      >
+        {deleting
+          ? <Icon name="Loader2" size={20} className="animate-spin" style={{ color: "white" }} />
+          : <button onClick={handleDelete}>
+              <Icon name="Trash2" size={20} style={{ color: "white" }} />
+            </button>
+        }
+      </div>
+
+      <div
+        style={{ transform: `translateX(${offset}px)`, transition: isDragging.current ? "none" : "transform 0.2s ease" }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className={`animate-fade-in stagger-${Math.min(index + 1, 6)}`}
+      >
+        <button
+          onClick={handleClick}
+          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors bg-background"
+        >
+          <div className="relative flex-shrink-0">
+            <Avatar
+              avatar={chat.avatar}
+              size={52}
+              className="rounded-full"
+              style={{ background: "hsl(35,45%,90%)" }}
+            />
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <div className="flex items-center justify-between mb-0.5">
+              <p className="text-foreground truncate text-[15px]" style={{ fontWeight: 700 }}>{chat.name}</p>
+              <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">{chat.lastAt}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground truncate">
+                {chat.lastText
+                  ? (chat.isGroup && chat.lastAuthor ? `${chat.lastAuthor}: ${chat.lastText}` : chat.lastText)
+                  : <span className="italic opacity-60">Нет сообщений</span>}
+              </p>
+              {chat.unread > 0 && (
+                <span
+                  className="ml-2 flex-shrink-0 min-w-[20px] h-5 rounded-full flex items-center justify-center text-[11px] text-white px-1"
+                  style={{ background: "hsl(22,85%,62%)", fontWeight: 700 }}
+                >
+                  {chat.unread}
+                </span>
+              )}
+            </div>
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function ChatsScreen({ pendingChatId, onPendingChatHandled }: Props) {
   const [chats, setChats] = useState<Chat[]>([]);
@@ -54,6 +186,10 @@ export default function ChatsScreen({ pendingChatId, onPendingChatHandled }: Pro
   const handleOpenChat = (chat: Chat) => {
     setOpenChat(chat);
     setChats((prev) => prev.map((c) => c.id === chat.id ? { ...c, unread: 0 } : c));
+  };
+
+  const handleDeleteChat = (chatId: number) => {
+    setChats((prev) => prev.filter((c) => c.id !== chatId));
   };
 
   const handleCreated = (chatId: number) => {
@@ -107,41 +243,13 @@ export default function ChatsScreen({ pendingChatId, onPendingChatHandled }: Pro
             </p>
           </div>
         ) : filtered.map((chat, i) => (
-          <button
+          <SwipeableChatRow
             key={chat.id}
-            onClick={() => handleOpenChat(chat)}
-            className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors animate-fade-in stagger-${Math.min(i + 1, 6)}`}
-          >
-            <div className="relative flex-shrink-0">
-              <Avatar
-                avatar={chat.avatar}
-                size={52}
-                className="rounded-full"
-                style={{ background: "hsl(35,45%,90%)" }}
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between mb-0.5">
-                <p className="text-foreground truncate text-[15px]" style={{ fontWeight: 700 }}>{chat.name}</p>
-                <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">{chat.lastAt}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground truncate">
-                  {chat.lastText
-                    ? (chat.isGroup && chat.lastAuthor ? `${chat.lastAuthor}: ${chat.lastText}` : chat.lastText)
-                    : <span className="italic opacity-60">Нет сообщений</span>}
-                </p>
-                {chat.unread > 0 && (
-                  <span
-                    className="ml-2 flex-shrink-0 min-w-[20px] h-5 rounded-full flex items-center justify-center text-[11px] text-white px-1"
-                    style={{ background: "hsl(22,85%,62%)", fontWeight: 700 }}
-                  >
-                    {chat.unread}
-                  </span>
-                )}
-              </div>
-            </div>
-          </button>
+            chat={chat}
+            index={i}
+            onOpen={handleOpenChat}
+            onDelete={handleDeleteChat}
+          />
         ))}
       </div>
 

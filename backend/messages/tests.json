@@ -12,6 +12,13 @@
       "path": "/",
       "body": {"action": "send_message", "chatId": 1, "text": "test"},
       "expectedStatus": 401
+    },
+    {
+      "name": "delete_chat without auth",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "delete_chat", "chatId": 1},
+      "expectedStatus": 401
     }
   ]
 }

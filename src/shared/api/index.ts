@@ -186,6 +186,11 @@ export async function createDirect(targetUserId: number): Promise<number> {
   return data.chatId as number;
 }
 
+export async function deleteChat(chatId: number): Promise<void> {
+  const { status, data } = await msgCall("POST", "delete_chat", { chatId });
+  if (status !== 200) throw new Error((data?.error as string) || "Ошибка удаления чата");
+}
+
 export async function createGroupChat(name: string, avatar: string, memberIds: number[]): Promise<number> {
   const { data } = await msgCall("POST", "create_chat", { name, avatar, memberIds });
   return data.chatId as number;
