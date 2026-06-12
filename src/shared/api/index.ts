@@ -197,7 +197,25 @@ export async function createGroupChat(name: string, avatar: string, memberIds: n
   return data.chatId as number;
 }
 
-export async function getChatUsers(): Promise<{ id: number; displayName: string; avatar: string; city: string }[]> {
+export type FamilyUser = {
+  id: number;
+  displayName: string;
+  avatar: string;
+  city: string;
+  onlineStatus?: string | null;
+  role: string;
+  inFamily: boolean;
+};
+
+export async function getChatUsers(): Promise<{ isAdmin: boolean; users: FamilyUser[] }> {
   const { data } = await msgCall("GET", "get_users");
-  return (data.users as { id: number; displayName: string; avatar: string; city: string }[]) || [];
+  return { isAdmin: data.isAdmin as boolean, users: (data.users as FamilyUser[]) || [] };
+}
+
+export async function addFamilyMember(memberId: number): Promise<void> {
+  await msgCall("POST", "add_family", { memberId });
+}
+
+export async function removeFamilyMember(memberId: number): Promise<void> {
+  await msgCall("POST", "remove_family", { memberId });
 }

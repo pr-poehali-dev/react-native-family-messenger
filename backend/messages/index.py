@@ -372,13 +372,60 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True})}
 
-    # get_users — список всех пользователей для создания чата
+    # get_users — список пользователей (для admin — все, для остальных — только добавленные в семью)
     if action == "get_users":
-        cur.execute(f"SELECT id, display_name, avatar, city, last_seen FROM {SCHEMA}.users WHERE id != %s ORDER BY display_name", (caller_id,))
+        caller_role = caller[1] if len(caller) > 1 else None
+        cur.execute(f"SELECT role FROM {SCHEMA}.users WHERE id = %s", (caller_id,))
+        role_row = cur.fetchone()
+        is_admin = role_row and role_row[0] == "admin"
+
+        if is_admin:
+            cur.execute(f"""
+                SELECT u.id, u.display_name, u.avatar, u.city, u.last_seen, u.role,
+                    EXISTS(SELECT 1 FROM {SCHEMA}.family_members fm WHERE fm.user_id = %s AND fm.member_id = u.id) as in_family
+                FROM {SCHEMA}.users u WHERE u.id != %s ORDER BY u.display_name
+            """, (caller_id, caller_id))
+        else:
+            cur.execute(f"""
+                SELECT u.id, u.display_name, u.avatar, u.city, u.last_seen, u.role, true as in_family
+                FROM {SCHEMA}.users u
+                JOIN {SCHEMA}.family_members fm ON fm.member_id = u.id AND fm.user_id = %s
+                WHERE u.id != %s ORDER BY u.display_name
+            """, (caller_id, caller_id))
+
         rows = cur.fetchall()
         conn.close()
-        users = [{"id": r[0], "displayName": r[1], "avatar": r[2] or "👤", "city": r[3] or "", "onlineStatus": format_online(r[4])} for r in rows]
-        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": users})}
+        users = [{
+            "id": r[0], "displayName": r[1], "avatar": r[2] or "👤",
+            "city": r[3] or "", "onlineStatus": format_online(r[4]),
+            "role": r[5] or "member", "inFamily": r[6]
+        } for r in rows]
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": users, "isAdmin": is_admin})}
+
+    # add_family — добавить пользователя в семью
+    if action == "add_family":
+        member_id = int(body.get("memberId", 0))
+        if not member_id:
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "memberId required"})}
+        cur.execute(f"""
+            INSERT INTO {SCHEMA}.family_members (user_id, member_id)
+            VALUES (%s, %s) ON CONFLICT DO NOTHING
+        """, (caller_id, member_id))
+        conn.commit()
+        conn.close()
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True})}
+
+    # remove_family — убрать пользователя из семьи
+    if action == "remove_family":
+        member_id = int(body.get("memberId", 0))
+        if not member_id:
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "memberId required"})}
+        cur.execute(f"DELETE FROM {SCHEMA}.family_members WHERE user_id = %s AND member_id = %s", (caller_id, member_id))
+        conn.commit()
+        conn.close()
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True})}
 
     conn.close()
     return {"statusCode": 404, "headers": cors(), "body": json.dumps({"error": "Unknown action"})}
