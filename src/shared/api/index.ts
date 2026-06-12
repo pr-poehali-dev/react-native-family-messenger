@@ -219,3 +219,8 @@ export async function addFamilyMember(memberId: number): Promise<void> {
 export async function removeFamilyMember(memberId: number): Promise<void> {
   await msgCall("POST", "remove_family", { memberId });
 }
+
+export async function searchUsers(query: string): Promise<FamilyUser[]> {
+  const { data } = await msgCall("POST", "search_users", { query });
+  return (data.users as FamilyUser[]) || [];
+}

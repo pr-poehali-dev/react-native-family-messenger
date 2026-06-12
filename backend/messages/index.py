@@ -402,6 +402,28 @@ def handler(event: dict, context) -> dict:
         } for r in rows]
         return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": users, "isAdmin": is_admin})}
 
+    # search_users — поиск всех пользователей по имени/username (для обычного пользователя)
+    if action == "search_users":
+        query = (body.get("query") or (event.get("queryStringParameters") or {}).get("query") or "").strip().lower()
+        if len(query) < 2:
+            conn.close()
+            return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": []})}
+        cur.execute(f"""
+            SELECT u.id, u.display_name, u.avatar, u.city, u.last_seen, u.role,
+                EXISTS(SELECT 1 FROM {SCHEMA}.family_members fm WHERE fm.user_id = %s AND fm.member_id = u.id) as in_family
+            FROM {SCHEMA}.users u
+            WHERE u.id != %s AND (LOWER(u.display_name) LIKE %s OR LOWER(u.username) LIKE %s)
+            ORDER BY u.display_name LIMIT 20
+        """, (caller_id, caller_id, f"%{query}%", f"%{query}%"))
+        rows = cur.fetchall()
+        conn.close()
+        users = [{
+            "id": r[0], "displayName": r[1], "avatar": r[2] or "👤",
+            "city": r[3] or "", "onlineStatus": format_online(r[4]),
+            "role": r[5] or "member", "inFamily": r[6]
+        } for r in rows]
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": users})}
+
     # add_family — добавить пользователя в семью
     if action == "add_family":
         member_id = int(body.get("memberId", 0))
