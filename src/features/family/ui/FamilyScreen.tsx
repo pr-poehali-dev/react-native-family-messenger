@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/shared/ui/icon";
 import Avatar from "@/shared/ui/Avatar";
-import OnlineStatus from "@/shared/ui/OnlineStatus";
 import { getChatUsers, createDirect } from "@/shared/api";
 import { useAuth } from "@/shared/lib/AuthContext";
 
@@ -97,15 +96,15 @@ export default function FamilyScreen({ onOpenDirectChat }: Props) {
                   size={56}
                   className="rounded-2xl"
                   style={{ background: bgColors[i % bgColors.length] }}
+                  onlineStatus={m.onlineStatus}
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <p className="text-foreground text-[15px]" style={{ fontWeight: 700 }}>{m.displayName}</p>
-                    {m.onlineStatus === "online" && <OnlineStatus status="online" />}
-                  </div>
+                  <p className="text-foreground text-[15px] mb-0.5" style={{ fontWeight: 700 }}>{m.displayName}</p>
                   {m.onlineStatus && m.onlineStatus !== "online"
-                    ? <OnlineStatus status={m.onlineStatus} />
-                    : m.city && <p className="text-xs text-muted-foreground" style={{ fontWeight: 600 }}>{m.city}</p>
+                    ? <p className="text-xs" style={{ color: "hsl(25,15%,60%)", fontWeight: 500 }}>{m.onlineStatus}</p>
+                    : m.onlineStatus === "online"
+                      ? <p className="text-xs" style={{ color: "hsl(142,70%,40%)", fontWeight: 600 }}>в сети</p>
+                      : m.city && <p className="text-xs text-muted-foreground" style={{ fontWeight: 600 }}>{m.city}</p>
                   }
                 </div>
                 <button

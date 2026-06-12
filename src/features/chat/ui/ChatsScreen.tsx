@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "@/shared/ui/icon";
 import Avatar from "@/shared/ui/Avatar";
-import OnlineStatus from "@/shared/ui/OnlineStatus";
 import { Chat, listChats, deleteChat } from "@/shared/api";
 import ChatView from "@/features/chat/ui/ChatView";
 import NewChatModal from "@/features/chat/ui/NewChatModal";
@@ -156,20 +155,18 @@ function ChatRow({ chat, onOpen, onDelete }: {
                 size={52}
                 className="rounded-full"
                 style={{ background: "hsl(35,45%,90%)" }}
+                onlineStatus={!chat.isGroup ? chat.onlineStatus : null}
               />
             </div>
             <div className="flex-1 min-w-0 text-left">
               <div className="flex items-center justify-between mb-0.5">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <p className="text-foreground truncate text-[15px]" style={{ fontWeight: 700 }}>{chat.name}</p>
-                  {!chat.isGroup && chat.onlineStatus === "online" && <OnlineStatus status="online" className="flex-shrink-0" />}
-                </div>
+                <p className="text-foreground truncate text-[15px]" style={{ fontWeight: 700 }}>{chat.name}</p>
                 <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">{chat.lastAt}</span>
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-sm text-muted-foreground truncate">
                   {!chat.isGroup && chat.onlineStatus && chat.onlineStatus !== "online"
-                    ? <OnlineStatus status={chat.onlineStatus} />
+                    ? chat.onlineStatus
                     : chat.lastText
                       ? (chat.isGroup && chat.lastAuthor ? `${chat.lastAuthor}: ${chat.lastText}` : chat.lastText)
                       : <span className="italic opacity-60">Нет сообщений</span>
