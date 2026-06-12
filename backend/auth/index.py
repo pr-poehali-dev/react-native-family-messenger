@@ -103,6 +103,7 @@ def handler(event: dict, context) -> dict:
             f"INSERT INTO {SCHEMA}.sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
             (user_id, token, expires)
         )
+        cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = NOW() WHERE id = %s", (user_id,))
         conn.commit()
         conn.close()
         return {
@@ -124,9 +125,12 @@ def handler(event: dict, context) -> dict:
         ensure_sessions_table(cur)
         conn.commit()
         row = get_user_by_session(cur, session_token)
-        conn.close()
         if not row:
+            conn.close()
             return {"statusCode": 401, "headers": cors(), "body": json.dumps({"error": "Сессия истекла"})}
+        cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = NOW() WHERE id = %s", (row[0],))
+        conn.commit()
+        conn.close()
         return {"statusCode": 200, "headers": cors(), "body": json.dumps({"user": user_dict(row)})}
 
     # logout

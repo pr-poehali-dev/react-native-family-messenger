@@ -19,6 +19,27 @@ def cors():
         "Access-Control-Allow-Headers": "Content-Type, X-Session-Id",
     }
 
+def format_online(last_seen):
+    """Возвращает 'online' если был < 3 мин назад, иначе строку 'был(а) N назад'"""
+    if not last_seen:
+        return None
+    now = datetime.utcnow()
+    delta = now - last_seen.replace(tzinfo=None)
+    seconds = int(delta.total_seconds())
+    if seconds < 180:
+        return "online"
+    if seconds < 3600:
+        m = seconds // 60
+        return f"был(а) {m} мин назад"
+    if seconds < 86400:
+        h = seconds // 3600
+        return f"был(а) {h} ч назад"
+    if delta.days == 1:
+        return "был(а) вчера"
+    if delta.days < 7:
+        return f"был(а) {delta.days} дн назад"
+    return f"был(а) {last_seen.strftime('%d.%m')}"
+
 def get_user_by_session(cur, token):
     cur.execute(f"""
         SELECT u.id, u.username, u.display_name, u.role, u.avatar
@@ -58,6 +79,10 @@ def handler(event: dict, context) -> dict:
 
     caller_id = caller[0]
 
+    # Обновляем last_seen при каждом запросе
+    cur.execute(f"UPDATE {SCHEMA}.users SET last_seen = NOW() WHERE id = %s", (caller_id,))
+    conn.commit()
+
     # list_chats — список чатов пользователя
     if action == "list_chats":
         cur.execute(f"""
@@ -92,9 +117,10 @@ def handler(event: dict, context) -> dict:
             chat_id, name, is_group, avatar, last_text, last_author, last_at, unread = row
             display_name = name
             display_avatar = avatar
+            other_last_seen = None
             if not is_group:
                 cur.execute(f"""
-                    SELECT u.display_name, u.avatar FROM {SCHEMA}.chat_members cm
+                    SELECT u.display_name, u.avatar, u.last_seen FROM {SCHEMA}.chat_members cm
                     JOIN {SCHEMA}.users u ON u.id = cm.user_id
                     WHERE cm.chat_id = %s AND cm.user_id != %s LIMIT 1
                 """, (chat_id, caller_id))
@@ -102,6 +128,7 @@ def handler(event: dict, context) -> dict:
                 if other:
                     display_name = other[0]
                     display_avatar = other[1] or "👤"
+                    other_last_seen = other[2]
 
             time_str = ""
             if last_at:
@@ -117,6 +144,8 @@ def handler(event: dict, context) -> dict:
                 else:
                     time_str = last_at.strftime("%d.%m")
 
+            online_status = format_online(other_last_seen) if not is_group else None
+
             chats.append({
                 "id": chat_id,
                 "name": display_name,
@@ -126,6 +155,7 @@ def handler(event: dict, context) -> dict:
                 "lastAuthor": last_author or "",
                 "lastAt": time_str,
                 "unread": int(unread or 0),
+                "onlineStatus": online_status,
             })
 
         conn.close()
@@ -344,10 +374,10 @@ def handler(event: dict, context) -> dict:
 
     # get_users — список всех пользователей для создания чата
     if action == "get_users":
-        cur.execute(f"SELECT id, display_name, avatar, city FROM {SCHEMA}.users WHERE id != %s ORDER BY display_name", (caller_id,))
+        cur.execute(f"SELECT id, display_name, avatar, city, last_seen FROM {SCHEMA}.users WHERE id != %s ORDER BY display_name", (caller_id,))
         rows = cur.fetchall()
         conn.close()
-        users = [{"id": r[0], "displayName": r[1], "avatar": r[2] or "👤", "city": r[3] or ""} for r in rows]
+        users = [{"id": r[0], "displayName": r[1], "avatar": r[2] or "👤", "city": r[3] or "", "onlineStatus": format_online(r[4])} for r in rows]
         return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": users})}
 
     conn.close()

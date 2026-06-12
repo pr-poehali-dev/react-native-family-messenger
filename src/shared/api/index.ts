@@ -10,6 +10,7 @@ export type Chat = {
   lastAuthor: string;
   lastAt: string;
   unread: number;
+  onlineStatus?: string | null;
 };
 
 export type Message = {

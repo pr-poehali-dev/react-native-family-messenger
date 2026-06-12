@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import Icon from "@/shared/ui/icon";
 import Avatar from "@/shared/ui/Avatar";
+import OnlineStatus from "@/shared/ui/OnlineStatus";
 import { getChatUsers, createDirect } from "@/shared/api";
 import { useAuth } from "@/shared/lib/AuthContext";
 
-type Member = { id: number; displayName: string; avatar: string; city: string };
+type Member = { id: number; displayName: string; avatar: string; city: string; onlineStatus?: string | null };
 
 const bgColors = [
   "hsl(35,45%,90%)", "hsl(340,55%,90%)", "hsl(200,50%,88%)",
@@ -98,8 +99,14 @@ export default function FamilyScreen({ onOpenDirectChat }: Props) {
                   style={{ background: bgColors[i % bgColors.length] }}
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-foreground text-[15px] mb-0.5" style={{ fontWeight: 700 }}>{m.displayName}</p>
-                  {m.city && <p className="text-xs text-muted-foreground" style={{ fontWeight: 600 }}>{m.city}</p>}
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <p className="text-foreground text-[15px]" style={{ fontWeight: 700 }}>{m.displayName}</p>
+                    {m.onlineStatus === "online" && <OnlineStatus status="online" />}
+                  </div>
+                  {m.onlineStatus && m.onlineStatus !== "online"
+                    ? <OnlineStatus status={m.onlineStatus} />
+                    : m.city && <p className="text-xs text-muted-foreground" style={{ fontWeight: 600 }}>{m.city}</p>
+                  }
                 </div>
                 <button
                   onClick={() => handleWrite(m.id)}
