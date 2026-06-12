@@ -42,14 +42,19 @@ async function call(method: string, action: string, body?: object) {
   const isGet = method === "GET";
   const url = isGet ? `${AUTH_URL}?action=${action}` : AUTH_URL;
   const token = getToken();
-  const res = await fetch(url, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { "X-Session-Id": token } : {}),
-    },
-    ...(isGet ? {} : { body: JSON.stringify({ action, ...body }) }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { "X-Session-Id": token } : {}),
+      },
+      ...(isGet ? {} : { body: JSON.stringify({ action, ...body }) }),
+    });
+  } catch {
+    throw new Error("Нет соединения с сервером. Проверьте интернет.");
+  }
   const text = await res.text();
   let data: unknown;
   try {
@@ -64,14 +69,19 @@ async function msgCall(method: string, action: string, body?: object) {
   const token = getToken();
   const params = new URLSearchParams({ action, ...(isGet && body ? body as Record<string, string> : {}) });
   const url = isGet ? `${MSG_URL}?${params}` : MSG_URL;
-  const res = await fetch(url, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { "X-Session-Id": token } : {}),
-    },
-    ...(isGet ? {} : { body: JSON.stringify({ action, ...body }) }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { "X-Session-Id": token } : {}),
+      },
+      ...(isGet ? {} : { body: JSON.stringify({ action, ...body }) }),
+    });
+  } catch {
+    throw new Error("Нет соединения с сервером. Проверьте интернет.");
+  }
   const text = await res.text();
   let data: unknown;
   try {
