@@ -18,12 +18,10 @@ function ChatRow({ chat, onOpen, onDelete }: {
   onDelete: (chatId: number) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const [offset, setOffset] = useState(0);
   const [deleting, setDeleting] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const menuBtnRef = useRef<HTMLButtonElement>(null);
   const startX = useRef(0);
   const startY = useRef(0);
   const moving = useRef(false);
@@ -121,16 +119,12 @@ function ChatRow({ chat, onOpen, onDelete }: {
 
   const handleMenuToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!menuOpen && menuBtnRef.current) {
-      const rect = menuBtnRef.current.getBoundingClientRect();
-      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
-    }
     setMenuOpen((v) => !v);
   };
 
   return (
-    <div className="relative">
-      {/* Красная зона — только при свайпе, clipPath не мешает дропдауну */}
+    <div className="relative" style={{ zIndex: menuOpen ? 10 : "auto" }}>
+      {/* Красная зона свайпа */}
       {offset < -DELETE_W / 4 && (
         <div
           className="absolute right-0 top-0 bottom-0 flex flex-col items-center justify-center"
@@ -138,7 +132,7 @@ function ChatRow({ chat, onOpen, onDelete }: {
         >
           {deleting
             ? <Icon name="Loader2" size={18} className="animate-spin" style={{ color: "white" }} />
-            : <button onClick={handleDelete} className="flex flex-col items-center gap-1 w-full h-full items-center justify-center flex">
+            : <button onClick={handleDelete} className="w-full h-full flex flex-col items-center justify-center gap-1">
                 <Icon name="Trash2" size={18} style={{ color: "white" }} />
                 <span className="text-[10px] text-white" style={{ fontWeight: 600 }}>Удалить</span>
               </button>
@@ -187,9 +181,8 @@ function ChatRow({ chat, onOpen, onDelete }: {
           </button>
 
           {/* Три точки */}
-          <div className="flex-shrink-0 pr-3">
+          <div className="relative flex-shrink-0 pr-3" ref={menuRef}>
             <button
-              ref={menuBtnRef}
               onClick={handleMenuToggle}
               className="w-8 h-8 rounded-full flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
               style={{ color: "hsl(25,15%,55%)" }}
@@ -200,33 +193,29 @@ function ChatRow({ chat, onOpen, onDelete }: {
                 : <Icon name="MoreVertical" size={16} />
               }
             </button>
-          </div>
 
-          {/* Дропдаун — через fixed чтобы не обрезался родителями */}
-          {menuOpen && (
-            <div
-              ref={menuRef}
-              className="rounded-2xl py-1 min-w-[140px]"
-              style={{
-                position: "fixed",
-                top: menuPos.top,
-                right: menuPos.right,
-                zIndex: 9999,
-                background: "white",
-                boxShadow: "0 4px 20px rgba(0,0,0,0.14)",
-                border: "1px solid hsl(35,30%,92%)",
-              }}
-            >
-              <button
-                onClick={handleDelete}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors hover:bg-red-50"
-                style={{ color: "hsl(0,75%,55%)", fontWeight: 600 }}
+            {/* Дропдаун — absolute относительно кнопки три точки */}
+            {menuOpen && (
+              <div
+                className="absolute right-0 top-full mt-1 rounded-2xl py-1 min-w-[150px]"
+                style={{
+                  zIndex: 9999,
+                  background: "white",
+                  boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
+                  border: "1px solid hsl(35,30%,92%)",
+                }}
               >
-                <Icon name="Trash2" size={15} />
-                Удалить чат
-              </button>
-            </div>
-          )}
+                <button
+                  onClick={handleDelete}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors hover:bg-red-50 rounded-2xl"
+                  style={{ color: "hsl(0,75%,55%)", fontWeight: 600 }}
+                >
+                  <Icon name="Trash2" size={15} />
+                  Удалить чат
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
