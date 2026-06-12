@@ -229,6 +229,9 @@ def handler(event: dict, context) -> dict:
         if caller[0] == target_id:
             conn.close()
             return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Нельзя удалить себя"})}
+        cur.execute(f"DELETE FROM {SCHEMA}.sessions WHERE user_id = %s", (target_id,))
+        cur.execute(f"DELETE FROM {SCHEMA}.messages WHERE user_id = %s", (target_id,))
+        cur.execute(f"DELETE FROM {SCHEMA}.chat_members WHERE user_id = %s", (target_id,))
         cur.execute(f"DELETE FROM {SCHEMA}.users WHERE id = %s", (target_id,))
         conn.commit()
         conn.close()
