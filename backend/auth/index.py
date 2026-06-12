@@ -312,6 +312,8 @@ def handler(event: dict, context) -> dict:
 
     # update_badge — только admin, устанавливает бейджик любому пользователю
     if method == "POST" and action == "update_badge":
+        conn = get_db()
+        cur = conn.cursor()
         caller = get_user_by_session(cur, session_token)
         if not caller or caller[3] != "admin":
             conn.close()
