@@ -5,7 +5,12 @@ import { Chat, listChats } from "@/shared/api";
 import ChatView from "@/features/chat/ui/ChatView";
 import NewChatModal from "@/features/chat/ui/NewChatModal";
 
-export default function ChatsScreen() {
+type Props = {
+  pendingChatId?: number | null;
+  onPendingChatHandled?: () => void;
+};
+
+export default function ChatsScreen({ pendingChatId, onPendingChatHandled }: Props) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
   const [openChat, setOpenChat] = useState<Chat | null>(null);
@@ -17,8 +22,10 @@ export default function ChatsScreen() {
     try {
       const list = await listChats();
       setChats(list);
+      return list;
     } catch { /* silent */ }
     finally { setLoading(false); }
+    return [];
   }, []);
 
   useEffect(() => {
@@ -27,6 +34,23 @@ export default function ChatsScreen() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [loadChats]);
 
+  useEffect(() => {
+    if (!pendingChatId) return;
+    const open = (list: Chat[]) => {
+      const found = list.find((c) => c.id === pendingChatId);
+      if (found) {
+        handleOpenChat(found);
+        onPendingChatHandled?.();
+      }
+    };
+    const found = chats.find((c) => c.id === pendingChatId);
+    if (found) {
+      open(chats);
+    } else {
+      loadChats().then((list) => open(list ?? []));
+    }
+  }, [pendingChatId]);
+
   const handleOpenChat = (chat: Chat) => {
     setOpenChat(chat);
     setChats((prev) => prev.map((c) => c.id === chat.id ? { ...c, unread: 0 } : c));
@@ -34,12 +58,9 @@ export default function ChatsScreen() {
 
   const handleCreated = (chatId: number) => {
     setShowNew(false);
-    loadChats().then(() => {
-      setChats((prev) => {
-        const found = prev.find((c) => c.id === chatId);
-        if (found) setTimeout(() => setOpenChat(found), 50);
-        return prev;
-      });
+    loadChats().then((list) => {
+      const found = (list ?? []).find((c) => c.id === chatId);
+      if (found) setTimeout(() => handleOpenChat(found), 50);
     });
   };
 

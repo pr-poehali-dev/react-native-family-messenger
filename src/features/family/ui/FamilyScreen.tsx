@@ -11,7 +11,9 @@ const bgColors = [
   "hsl(140,35%,87%)", "hsl(270,35%,88%)", "hsl(50,60%,88%)", "hsl(22,65%,88%)",
 ];
 
-export default function FamilyScreen() {
+type Props = { onOpenDirectChat?: (chatId: number) => void };
+
+export default function FamilyScreen({ onOpenDirectChat }: Props) {
   const { user } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +28,8 @@ export default function FamilyScreen() {
   const handleWrite = async (memberId: number) => {
     setWritingTo(memberId);
     try {
-      await createDirect(memberId);
+      const chatId = await createDirect(memberId);
+      onOpenDirectChat?.(chatId);
     } catch { /* silent */ }
     finally { setWritingTo(null); }
   };

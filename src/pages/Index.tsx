@@ -11,7 +11,13 @@ import LoginScreen from "@/features/auth/ui/LoginScreen";
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<Tab>("chats");
+  const [pendingChatId, setPendingChatId] = useState<number | null>(null);
   const { user, loading } = useAuth();
+
+  const handleOpenDirectChat = (chatId: number) => {
+    setPendingChatId(chatId);
+    setActiveTab("chats");
+  };
 
   if (loading) {
     return (
@@ -41,8 +47,10 @@ export default function Index() {
       />
 
       <div className="flex-1 overflow-hidden">
-        {activeTab === "chats" && <ChatsScreen />}
-        {activeTab === "family" && <FamilyScreen />}
+        <div style={{ display: activeTab === "chats" ? "flex" : "none", flexDirection: "column", height: "100%" }}>
+          <ChatsScreen pendingChatId={pendingChatId} onPendingChatHandled={() => setPendingChatId(null)} />
+        </div>
+        {activeTab === "family" && <FamilyScreen onOpenDirectChat={handleOpenDirectChat} />}
         {activeTab === "gallery" && <GalleryScreen />}
         {activeTab === "files" && <FilesScreen />}
         {activeTab === "profile" && <ProfileScreen />}
