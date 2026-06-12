@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/shared/ui/icon";
+import Avatar from "@/shared/ui/Avatar";
 import { User, listUsers, createUser, deleteUser } from "@/shared/api";
 
 const AVATARS = ["👨", "👩", "👧", "👦", "👴", "👵", "🧑", "👶", "🧒"];
@@ -187,9 +188,12 @@ export default function AdminPanel({ onBack }: Props) {
                 className={`bg-white rounded-3xl px-4 py-3.5 flex items-center gap-3 animate-slide-up stagger-${Math.min(i + 1, 6)}`}
                 style={{ boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}
               >
-                <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0" style={{ background: "hsl(35,45%,90%)" }}>
-                  {u.avatar}
-                </div>
+                <Avatar
+                  avatar={u.avatar}
+                  size={44}
+                  className="rounded-2xl"
+                  style={{ background: "hsl(35,45%,90%)" }}
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-sm text-foreground truncate" style={{ fontWeight: 700 }}>{u.displayName}</p>

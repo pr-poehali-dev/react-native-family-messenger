@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "@/shared/ui/icon";
+import Avatar from "@/shared/ui/Avatar";
 import { Chat, listChats } from "@/shared/api";
 import ChatView from "@/features/chat/ui/ChatView";
 import NewChatModal from "@/features/chat/ui/NewChatModal";
@@ -91,9 +92,12 @@ export default function ChatsScreen() {
             className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors animate-fade-in stagger-${Math.min(i + 1, 6)}`}
           >
             <div className="relative flex-shrink-0">
-              <div className="w-[52px] h-[52px] rounded-full flex items-center justify-center text-2xl" style={{ background: "hsl(35,45%,90%)" }}>
-                {chat.avatar}
-              </div>
+              <Avatar
+                avatar={chat.avatar}
+                size={52}
+                className="rounded-full"
+                style={{ background: "hsl(35,45%,90%)" }}
+              />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between mb-0.5">

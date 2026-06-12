@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/shared/ui/icon";
+import Avatar from "@/shared/ui/Avatar";
 import { getChatUsers, createDirect, createGroupChat } from "@/shared/api";
 
 type Props = { onClose: () => void; onCreate: (chatId: number) => void };
@@ -74,9 +75,12 @@ export default function NewChatModal({ onClose, onCreate }: Props) {
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl mb-1.5 transition-all"
                 style={{ background: isSelected ? "hsl(22,85%,95%)" : "hsl(35,40%,96%)" }}
               >
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0" style={{ background: "hsl(35,45%,90%)" }}>
-                  {u.avatar}
-                </div>
+                <Avatar
+                  avatar={u.avatar}
+                  size={40}
+                  className="rounded-full"
+                  style={{ background: "hsl(35,45%,90%)" }}
+                />
                 <div className="flex-1 text-left">
                   <p className="text-sm text-foreground" style={{ fontWeight: 600 }}>{u.displayName}</p>
                   {u.city && <p className="text-xs text-muted-foreground">{u.city}</p>}

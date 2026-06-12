@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/shared/ui/icon";
+import Avatar from "@/shared/ui/Avatar";
 import { getChatUsers, createDirect } from "@/shared/api";
 import { useAuth } from "@/shared/lib/AuthContext";
 
@@ -55,12 +56,12 @@ export default function FamilyScreen() {
                 className="bg-white rounded-3xl p-4 flex items-center gap-4 animate-slide-up"
                 style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.06)", border: "2px solid hsl(22,85%,90%)" }}
               >
-                <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0"
+                <Avatar
+                  avatar={user.avatar}
+                  size={56}
+                  className="rounded-2xl"
                   style={{ background: "linear-gradient(135deg, hsl(22,85%,62%), hsl(340,60%,68%))" }}
-                >
-                  {user.avatar}
-                </div>
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
                     <p className="text-foreground text-[15px]" style={{ fontWeight: 700 }}>{user.displayName}</p>
@@ -87,12 +88,12 @@ export default function FamilyScreen() {
                 className={`bg-white rounded-3xl p-4 flex items-center gap-4 animate-slide-up stagger-${Math.min(i + 2, 6)}`}
                 style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}
               >
-                <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0"
+                <Avatar
+                  avatar={m.avatar}
+                  size={56}
+                  className="rounded-2xl"
                   style={{ background: bgColors[i % bgColors.length] }}
-                >
-                  {m.avatar}
-                </div>
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-foreground text-[15px] mb-0.5" style={{ fontWeight: 700 }}>{m.displayName}</p>
                   {m.city && <p className="text-xs text-muted-foreground" style={{ fontWeight: 600 }}>{m.city}</p>}
