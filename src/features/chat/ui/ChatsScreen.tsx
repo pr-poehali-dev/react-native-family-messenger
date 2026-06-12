@@ -10,102 +10,142 @@ type Props = {
   onPendingChatHandled?: () => void;
 };
 
-function SwipeableChatRow({ chat, index, onOpen, onDelete }: {
+const DELETE_W = 72;
+
+function SwipeableChatRow({ chat, onOpen, onDelete }: {
   chat: Chat;
-  index: number;
   onOpen: (chat: Chat) => void;
   onDelete: (chatId: number) => void;
 }) {
   const [offset, setOffset] = useState(0);
-  const [swiped, setSwiped] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
   const startX = useRef(0);
   const startY = useRef(0);
-  const isDragging = useRef(false);
-  const isScrolling = useRef<boolean | null>(null);
-  const DELETE_THRESHOLD = 80;
+  const moving = useRef(false);
+  const dirLocked = useRef<"h" | "v" | null>(null);
+  const currentOffset = useRef(0);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    startX.current = e.touches[0].clientX;
-    startY.current = e.touches[0].clientY;
-    isDragging.current = true;
-    isScrolling.current = null;
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging.current) return;
-    const dx = e.touches[0].clientX - startX.current;
-    const dy = e.touches[0].clientY - startY.current;
-
-    if (isScrolling.current === null) {
-      isScrolling.current = Math.abs(dy) > Math.abs(dx);
-    }
-    if (isScrolling.current) return;
-
-    e.preventDefault();
-    if (dx > 0 && !swiped) return;
-    const base = swiped ? -DELETE_THRESHOLD : 0;
-    const newOffset = Math.max(-DELETE_THRESHOLD - 20, Math.min(0, base + dx));
-    setOffset(newOffset);
-  };
-
-  const handleTouchEnd = () => {
-    isDragging.current = false;
-    if (isScrolling.current) return;
-    if (offset < -DELETE_THRESHOLD / 2) {
-      setOffset(-DELETE_THRESHOLD);
-      setSwiped(true);
-    } else {
-      setOffset(0);
-      setSwiped(false);
+  const snapTo = (val: number) => {
+    currentOffset.current = val;
+    setOffset(val);
+    if (rowRef.current) {
+      rowRef.current.style.transition = "transform 0.2s ease";
+      rowRef.current.style.transform = `translateX(${val}px)`;
     }
   };
 
-  const handleDelete = async () => {
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el) return;
+
+    const onStart = (e: TouchEvent) => {
+      startX.current = e.touches[0].clientX;
+      startY.current = e.touches[0].clientY;
+      moving.current = true;
+      dirLocked.current = null;
+    };
+
+    const onMove = (e: TouchEvent) => {
+      if (!moving.current) return;
+      const dx = e.touches[0].clientX - startX.current;
+      const dy = e.touches[0].clientY - startY.current;
+
+      if (!dirLocked.current) {
+        if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+        dirLocked.current = Math.abs(dy) > Math.abs(dx) ? "v" : "h";
+      }
+      if (dirLocked.current === "v") return;
+
+      e.preventDefault();
+      const base = currentOffset.current < -DELETE_W / 2 ? -DELETE_W : 0;
+      const newVal = Math.max(-DELETE_W - 8, Math.min(0, base + dx));
+      el.style.transition = "none";
+      el.style.transform = `translateX(${newVal}px)`;
+      currentOffset.current = newVal;
+    };
+
+    const onEnd = () => {
+      if (!moving.current) return;
+      moving.current = false;
+      if (dirLocked.current === "v") return;
+      const snapped = currentOffset.current < -DELETE_W / 2 ? -DELETE_W : 0;
+      el.style.transition = "transform 0.2s ease";
+      el.style.transform = `translateX(${snapped}px)`;
+      currentOffset.current = snapped;
+      setOffset(snapped);
+    };
+
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+    };
+  }, []);
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     setDeleting(true);
     try {
       await deleteChat(chat.id);
       onDelete(chat.id);
     } catch {
       setDeleting(false);
-      setOffset(0);
-      setSwiped(false);
+      snapTo(0);
     }
   };
 
-  const handleClick = () => {
-    if (swiped) {
-      setOffset(0);
-      setSwiped(false);
+  const handleRowClick = () => {
+    if (currentOffset.current < 0) {
+      snapTo(0);
       return;
     }
     onOpen(chat);
   };
 
+  const showDelete = offset < -DELETE_W / 4 || hovered;
+
   return (
-    <div className="relative overflow-hidden">
+    <div
+      className="relative"
+      style={{ overflow: "hidden" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       <div
-        className="absolute right-0 top-0 bottom-0 flex items-center justify-center"
-        style={{ width: DELETE_THRESHOLD + 20, background: "hsl(0,75%,58%)" }}
+        className="absolute right-0 top-0 bottom-0 flex flex-col items-center justify-center gap-0.5"
+        style={{
+          width: DELETE_W,
+          background: "hsl(0,75%,58%)",
+          opacity: showDelete ? 1 : 0,
+          transition: "opacity 0.15s ease",
+          pointerEvents: showDelete ? "auto" : "none",
+        }}
       >
         {deleting
-          ? <Icon name="Loader2" size={20} className="animate-spin" style={{ color: "white" }} />
-          : <button onClick={handleDelete}>
-              <Icon name="Trash2" size={20} style={{ color: "white" }} />
+          ? <Icon name="Loader2" size={18} className="animate-spin" style={{ color: "white" }} />
+          : <button
+              onClick={handleDelete}
+              className="flex flex-col items-center gap-1 w-full h-full flex items-center justify-center"
+            >
+              <Icon name="Trash2" size={18} style={{ color: "white" }} />
+              <span className="text-[10px] text-white" style={{ fontWeight: 600 }}>Удалить</span>
             </button>
         }
       </div>
 
       <div
-        style={{ transform: `translateX(${offset}px)`, transition: isDragging.current ? "none" : "transform 0.2s ease" }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        className={`animate-fade-in stagger-${Math.min(index + 1, 6)}`}
+        ref={rowRef}
+        style={{ transform: "translateX(0px)", willChange: "transform" }}
       >
         <button
-          onClick={handleClick}
-          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors bg-background"
+          onClick={handleRowClick}
+          className="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+          style={{ background: hovered ? "hsl(35,30%,97%)" : "var(--background)" }}
         >
           <div className="relative flex-shrink-0">
             <Avatar
@@ -242,11 +282,10 @@ export default function ChatsScreen({ pendingChatId, onPendingChatHandled }: Pro
               {search ? "Чат не найден" : "Чатов пока нет.\nНажмите + чтобы начать переписку!"}
             </p>
           </div>
-        ) : filtered.map((chat, i) => (
+        ) : filtered.map((chat) => (
           <SwipeableChatRow
             key={chat.id}
             chat={chat}
-            index={i}
             onOpen={handleOpenChat}
             onDelete={handleDeleteChat}
           />
