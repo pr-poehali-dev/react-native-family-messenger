@@ -1,13 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "@/shared/ui/icon";
+import Avatar from "@/shared/ui/Avatar";
 import { Chat, Message, getMessages, sendMessage, sendPhoto } from "@/shared/api";
 import ChatMessageBubble from "@/features/chat/ui/ChatMessageBubble";
 
 type Props = { chat: Chat; onBack: () => void };
-
-function avatarIsUrl(av: string) {
-  return av?.startsWith("http");
-}
 
 export default function ChatView({ chat, onBack }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -102,16 +99,24 @@ export default function ChatView({ chat, onBack }: Props) {
         <button onClick={onBack} className="p-1.5 rounded-full hover:bg-muted transition-colors">
           <Icon name="ArrowLeft" size={20} style={{ color: "hsl(22,85%,58%)" }} />
         </button>
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0 overflow-hidden"
-          style={{ background: "hsl(35,45%,90%)" }}>
-          {avatarIsUrl(chat.avatar)
-            ? <img src={chat.avatar} className="w-full h-full object-cover" alt="" />
-            : chat.avatar}
-        </div>
+        <Avatar
+          avatar={chat.avatar}
+          size={40}
+          className="rounded-full"
+          style={{ background: "hsl(35,45%,90%)" }}
+          onlineStatus={!chat.isGroup ? chat.onlineStatus : null}
+        />
         <div className="flex-1 min-w-0">
           <p className="text-foreground truncate text-[15px]" style={{ fontWeight: 700 }}>{chat.name}</p>
-          <p className="text-xs" style={{ color: "hsl(140,40%,50%)", fontWeight: 500 }}>
-            {chat.isGroup ? "Групповой чат" : "Личные сообщения"}
+          <p className="text-xs" style={{ fontWeight: 500,
+            color: !chat.isGroup && chat.onlineStatus === "online" ? "hsl(142,70%,40%)" : "hsl(25,15%,60%)" }}>
+            {chat.isGroup
+              ? "Групповой чат"
+              : chat.onlineStatus === "online"
+                ? "в сети"
+                : chat.onlineStatus
+                  ? chat.onlineStatus
+                  : "Личные сообщения"}
           </p>
         </div>
       </div>
