@@ -12,15 +12,16 @@ type Props = {
 
 const DELETE_W = 72;
 
-function SwipeableChatRow({ chat, onOpen, onDelete }: {
+function ChatRow({ chat, onOpen, onDelete }: {
   chat: Chat;
   onOpen: (chat: Chat) => void;
   onDelete: (chatId: number) => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const [offset, setOffset] = useState(0);
   const [deleting, setDeleting] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const startX = useRef(0);
   const startY = useRef(0);
   const moving = useRef(false);
@@ -36,6 +37,7 @@ function SwipeableChatRow({ chat, onOpen, onDelete }: {
     }
   };
 
+  // Свайп только на touch-устройствах
   useEffect(() => {
     const el = rowRef.current;
     if (!el) return;
@@ -51,13 +53,11 @@ function SwipeableChatRow({ chat, onOpen, onDelete }: {
       if (!moving.current) return;
       const dx = e.touches[0].clientX - startX.current;
       const dy = e.touches[0].clientY - startY.current;
-
       if (!dirLocked.current) {
         if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
         dirLocked.current = Math.abs(dy) > Math.abs(dx) ? "v" : "h";
       }
       if (dirLocked.current === "v") return;
-
       e.preventDefault();
       const base = currentOffset.current < -DELETE_W / 2 ? -DELETE_W : 0;
       const newVal = Math.max(-DELETE_W - 8, Math.min(0, base + dx));
@@ -87,8 +87,21 @@ function SwipeableChatRow({ chat, onOpen, onDelete }: {
     };
   }, []);
 
+  // Закрыть меню при клике вне
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    setMenuOpen(false);
     setDeleting(true);
     try {
       await deleteChat(chat.id);
@@ -100,83 +113,101 @@ function SwipeableChatRow({ chat, onOpen, onDelete }: {
   };
 
   const handleRowClick = () => {
-    if (currentOffset.current < 0) {
-      snapTo(0);
-      return;
-    }
+    if (currentOffset.current < 0) { snapTo(0); return; }
     onOpen(chat);
   };
 
-  const showDelete = offset < -DELETE_W / 4 || hovered;
+  const handleMenuToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMenuOpen((v) => !v);
+  };
 
   return (
-    <div
-      className="relative"
-      style={{ overflow: "hidden" }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <div
-        className="absolute right-0 top-0 bottom-0 flex flex-col items-center justify-center gap-0.5"
-        style={{
-          width: DELETE_W,
-          background: "hsl(0,75%,58%)",
-          opacity: showDelete ? 1 : 0,
-          transition: "opacity 0.15s ease",
-          pointerEvents: showDelete ? "auto" : "none",
-        }}
-      >
-        {deleting
-          ? <Icon name="Loader2" size={18} className="animate-spin" style={{ color: "white" }} />
-          : <button
-              onClick={handleDelete}
-              className="flex flex-col items-center gap-1 w-full h-full flex items-center justify-center"
-            >
-              <Icon name="Trash2" size={18} style={{ color: "white" }} />
-              <span className="text-[10px] text-white" style={{ fontWeight: 600 }}>Удалить</span>
-            </button>
-        }
-      </div>
-
-      <div
-        ref={rowRef}
-        style={{ transform: "translateX(0px)", willChange: "transform" }}
-      >
-        <button
-          onClick={handleRowClick}
-          className="w-full flex items-center gap-3 px-4 py-3 transition-colors"
-          style={{ background: hovered ? "hsl(35,30%,97%)" : "var(--background)" }}
+    <div className="relative" style={{ overflow: "hidden" }}>
+      {/* Красная зона — только при свайпе на мобиле */}
+      {offset < -DELETE_W / 4 && (
+        <div
+          className="absolute right-0 top-0 bottom-0 flex flex-col items-center justify-center"
+          style={{ width: DELETE_W, background: "hsl(0,75%,58%)" }}
         >
-          <div className="relative flex-shrink-0">
-            <Avatar
-              avatar={chat.avatar}
-              size={52}
-              className="rounded-full"
-              style={{ background: "hsl(35,45%,90%)" }}
-            />
-          </div>
-          <div className="flex-1 min-w-0 text-left">
-            <div className="flex items-center justify-between mb-0.5">
-              <p className="text-foreground truncate text-[15px]" style={{ fontWeight: 700 }}>{chat.name}</p>
-              <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">{chat.lastAt}</span>
+          {deleting
+            ? <Icon name="Loader2" size={18} className="animate-spin" style={{ color: "white" }} />
+            : <button onClick={handleDelete} className="flex flex-col items-center gap-1 w-full h-full items-center justify-center flex">
+                <Icon name="Trash2" size={18} style={{ color: "white" }} />
+                <span className="text-[10px] text-white" style={{ fontWeight: 600 }}>Удалить</span>
+              </button>
+          }
+        </div>
+      )}
+
+      <div ref={rowRef} style={{ transform: "translateX(0px)", willChange: "transform" }}>
+        <div className="relative flex items-center group hover:bg-muted/40 transition-colors">
+          <button
+            onClick={handleRowClick}
+            className="flex-1 flex items-center gap-3 px-4 py-3 min-w-0"
+          >
+            <div className="flex-shrink-0">
+              <Avatar
+                avatar={chat.avatar}
+                size={52}
+                className="rounded-full"
+                style={{ background: "hsl(35,45%,90%)" }}
+              />
             </div>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground truncate">
-                {chat.lastText
-                  ? (chat.isGroup && chat.lastAuthor ? `${chat.lastAuthor}: ${chat.lastText}` : chat.lastText)
-                  : <span className="italic opacity-60">Нет сообщений</span>}
-              </p>
-              {chat.unread > 0 && (
-                <span
-                  className="ml-2 flex-shrink-0 min-w-[20px] h-5 rounded-full flex items-center justify-center text-[11px] text-white px-1"
-                  style={{ background: "hsl(22,85%,62%)", fontWeight: 700 }}
+            <div className="flex-1 min-w-0 text-left">
+              <div className="flex items-center justify-between mb-0.5">
+                <p className="text-foreground truncate text-[15px]" style={{ fontWeight: 700 }}>{chat.name}</p>
+                <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">{chat.lastAt}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground truncate">
+                  {chat.lastText
+                    ? (chat.isGroup && chat.lastAuthor ? `${chat.lastAuthor}: ${chat.lastText}` : chat.lastText)
+                    : <span className="italic opacity-60">Нет сообщений</span>}
+                </p>
+                {chat.unread > 0 && (
+                  <span
+                    className="ml-2 flex-shrink-0 min-w-[20px] h-5 rounded-full flex items-center justify-center text-[11px] text-white px-1"
+                    style={{ background: "hsl(22,85%,62%)", fontWeight: 700 }}
+                  >
+                    {chat.unread}
+                  </span>
+                )}
+              </div>
+            </div>
+          </button>
+
+          {/* Три точки — видны при ховере на ПК, всегда видны на мобиле если свайп открыт */}
+          <div className="relative flex-shrink-0 pr-3" ref={menuRef}>
+            <button
+              onClick={handleMenuToggle}
+              className="w-8 h-8 rounded-full flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+              style={{ color: "hsl(25,15%,55%)" }}
+              tabIndex={-1}
+            >
+              {deleting
+                ? <Icon name="Loader2" size={16} className="animate-spin" />
+                : <Icon name="MoreVertical" size={16} />
+              }
+            </button>
+
+            {menuOpen && (
+              <div
+                className="absolute right-0 top-9 z-50 rounded-2xl py-1 min-w-[140px]"
+                style={{ background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", border: "1px solid hsl(35,30%,92%)" }}
+              >
+                <button
+                  onClick={handleDelete}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors hover:bg-red-50"
+                  style={{ color: "hsl(0,75%,55%)", fontWeight: 600 }}
                 >
-                  {chat.unread}
-                </span>
-              )}
-            </div>
+                  <Icon name="Trash2" size={15} />
+                  Удалить чат
+                </button>
+              </div>
+            )}
           </div>
-        </button>
+        </div>
       </div>
     </div>
   );
@@ -283,7 +314,7 @@ export default function ChatsScreen({ pendingChatId, onPendingChatHandled }: Pro
             </p>
           </div>
         ) : filtered.map((chat) => (
-          <SwipeableChatRow
+          <ChatRow
             key={chat.id}
             chat={chat}
             onOpen={handleOpenChat}
