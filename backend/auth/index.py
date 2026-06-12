@@ -46,7 +46,7 @@ def ensure_sessions_table(cur):
 
 def get_user_by_session(cur, token):
     cur.execute(f"""
-        SELECT u.id, u.username, u.display_name, u.role, u.avatar, u.bio, u.city, u.age
+        SELECT u.id, u.username, u.display_name, u.role, u.avatar, u.bio, u.city, u.age, u.badge_text, u.badge_color
         FROM {SCHEMA}.sessions s
         JOIN {SCHEMA}.users u ON u.id = s.user_id
         WHERE s.token = %s AND s.expires_at > NOW()
@@ -57,7 +57,8 @@ def user_dict(row):
     return {
         "id": row[0], "username": row[1], "displayName": row[2],
         "role": row[3], "avatar": row[4] or "👤",
-        "bio": row[5] or "", "city": row[6] or "", "age": row[7]
+        "bio": row[5] or "", "city": row[6] or "", "age": row[7],
+        "badgeText": row[8] or "", "badgeColor": row[9] or ""
     }
 
 def handler(event: dict, context) -> dict:
@@ -201,12 +202,13 @@ def handler(event: dict, context) -> dict:
         if not caller or caller[3] != "admin":
             conn.close()
             return {"statusCode": 403, "headers": cors(), "body": json.dumps({"error": "Нет доступа"})}
-        cur.execute(f"SELECT id, username, display_name, role, avatar, city, age, created_at FROM {SCHEMA}.users ORDER BY id")
+        cur.execute(f"SELECT id, username, display_name, role, avatar, city, age, created_at, badge_text, badge_color FROM {SCHEMA}.users ORDER BY id")
         rows = cur.fetchall()
         conn.close()
         users = [
             {"id": r[0], "username": r[1], "displayName": r[2], "role": r[3],
-             "avatar": r[4] or "👤", "city": r[5] or "", "age": r[6], "createdAt": str(r[7])}
+             "avatar": r[4] or "👤", "city": r[5] or "", "age": r[6], "createdAt": str(r[7]),
+             "badgeText": r[8] or "", "badgeColor": r[9] or ""}
             for r in rows
         ]
         return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": users})}
@@ -307,5 +309,25 @@ def handler(event: dict, context) -> dict:
 
         conn.close()
         return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "Нет данных для обновления"})}
+
+    # update_badge — только admin, устанавливает бейджик любому пользователю
+    if method == "POST" and action == "update_badge":
+        caller = get_user_by_session(cur, session_token)
+        if not caller or caller[3] != "admin":
+            conn.close()
+            return {"statusCode": 403, "headers": cors(), "body": json.dumps({"error": "Нет доступа"})}
+        target_id = int(body.get("userId", 0))
+        badge_text = (body.get("badgeText") or "").strip()[:32]
+        badge_color = (body.get("badgeColor") or "").strip()[:32]
+        if not target_id:
+            conn.close()
+            return {"statusCode": 400, "headers": cors(), "body": json.dumps({"error": "userId required"})}
+        cur.execute(
+            f"UPDATE {SCHEMA}.users SET badge_text = %s, badge_color = %s WHERE id = %s",
+            (badge_text or None, badge_color or None, target_id)
+        )
+        conn.commit()
+        conn.close()
+        return {"statusCode": 200, "headers": cors(), "body": json.dumps({"ok": True})}
 
     return {"statusCode": 404, "headers": cors(), "body": json.dumps({"error": "Unknown action"})}

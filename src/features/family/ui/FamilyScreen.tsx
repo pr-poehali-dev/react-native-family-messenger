@@ -4,6 +4,15 @@ import Avatar from "@/shared/ui/Avatar";
 import { getChatUsers, createDirect, addFamilyMember, removeFamilyMember, searchUsers, FamilyUser } from "@/shared/api";
 import { useAuth } from "@/shared/lib/AuthContext";
 
+function Badge({ text, color }: { text?: string; color?: string }) {
+  if (!text) return null;
+  return (
+    <span className="text-[10px] px-1.5 py-0.5 rounded-md flex-shrink-0" style={{ background: color || "hsl(210,90%,92%)", color: "hsl(0,0%,25%)", fontWeight: 700 }}>
+      {text}
+    </span>
+  );
+}
+
 const bgColors = [
   "hsl(35,45%,90%)", "hsl(340,55%,90%)", "hsl(200,50%,88%)",
   "hsl(140,35%,87%)", "hsl(270,35%,88%)", "hsl(50,60%,88%)", "hsl(22,65%,88%)",
@@ -160,9 +169,10 @@ export default function FamilyScreen({ onOpenDirectChat }: Props) {
                 onlineStatus={m.onlineStatus}
               />
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 mb-0.5">
+                <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                   <p className="text-foreground text-[15px]" style={{ fontWeight: 700 }}>{m.displayName}</p>
                   {m.role === "admin" && <Icon name="ShieldCheck" size={13} style={{ color: "hsl(210,90%,50%)", flexShrink: 0 }} />}
+                  <Badge text={m.badgeText} color={m.badgeColor} />
                 </div>
                 {m.city && <p className="text-xs text-muted-foreground" style={{ fontWeight: 500 }}>{m.city}</p>}
               </div>
@@ -205,7 +215,7 @@ export default function FamilyScreen({ onOpenDirectChat }: Props) {
                       style={{ background: "linear-gradient(135deg, hsl(22,85%,62%), hsl(340,60%,68%))" }}
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
+                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                         <p className="text-foreground text-[15px]" style={{ fontWeight: 700 }}>{user.displayName}</p>
                         <span className="text-[10px] px-1.5 py-0.5 rounded-md" style={{ background: "hsl(22,85%,92%)", color: "hsl(22,85%,45%)", fontWeight: 700 }}>Я</span>
                         {user.role === "admin" && (
@@ -213,6 +223,7 @@ export default function FamilyScreen({ onOpenDirectChat }: Props) {
                             <Icon name="ShieldCheck" size={10} />Admin
                           </span>
                         )}
+                        <Badge text={user.badgeText} color={user.badgeColor} />
                       </div>
                       <p className="text-xs text-muted-foreground" style={{ fontWeight: 600 }}>
                         @{user.username}{user.city ? ` · ${user.city}` : ""}
@@ -243,11 +254,12 @@ export default function FamilyScreen({ onOpenDirectChat }: Props) {
                       onlineStatus={m.onlineStatus}
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
+                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                         <p className="text-foreground text-[15px]" style={{ fontWeight: 700 }}>{m.displayName}</p>
                         {m.role === "admin" && (
                           <Icon name="ShieldCheck" size={14} style={{ color: "hsl(210,90%,50%)", flexShrink: 0 }} />
                         )}
+                        <Badge text={m.badgeText} color={m.badgeColor} />
                       </div>
                       {m.onlineStatus && m.onlineStatus !== "online"
                         ? <p className="text-xs" style={{ color: "hsl(25,15%,60%)", fontWeight: 500 }}>{m.onlineStatus}</p>

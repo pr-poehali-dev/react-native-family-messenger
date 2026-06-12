@@ -33,6 +33,8 @@ export type User = {
   bio: string;
   city: string;
   age: number | null;
+  badgeText?: string;
+  badgeColor?: string;
 };
 
 function getToken() {
@@ -156,6 +158,11 @@ export async function updateAvatar(payload: { emoji?: string; imageBase64?: stri
   return data.avatar as string;
 }
 
+export async function updateBadge(userId: number, badgeText: string, badgeColor: string): Promise<void> {
+  const { status, data } = await call("POST", "update_badge", { userId, badgeText, badgeColor });
+  if (status !== 200) throw new Error((data?.error as string) || "Ошибка обновления бейджика");
+}
+
 // ── Messages ──────────────────────────────────────────────────────────────────
 
 export async function listChats(): Promise<Chat[]> {
@@ -205,6 +212,8 @@ export type FamilyUser = {
   onlineStatus?: string | null;
   role: string;
   inFamily: boolean;
+  badgeText?: string;
+  badgeColor?: string;
 };
 
 export async function getChatUsers(): Promise<{ isAdmin: boolean; users: FamilyUser[] }> {

@@ -382,12 +382,14 @@ def handler(event: dict, context) -> dict:
         if is_admin:
             cur.execute(f"""
                 SELECT u.id, u.display_name, u.avatar, u.city, u.last_seen, u.role,
-                    EXISTS(SELECT 1 FROM {SCHEMA}.family_members fm WHERE fm.user_id = %s AND fm.member_id = u.id) as in_family
+                    EXISTS(SELECT 1 FROM {SCHEMA}.family_members fm WHERE fm.user_id = %s AND fm.member_id = u.id) as in_family,
+                    u.badge_text, u.badge_color
                 FROM {SCHEMA}.users u WHERE u.id != %s ORDER BY u.display_name
             """, (caller_id, caller_id))
         else:
             cur.execute(f"""
-                SELECT u.id, u.display_name, u.avatar, u.city, u.last_seen, u.role, true as in_family
+                SELECT u.id, u.display_name, u.avatar, u.city, u.last_seen, u.role, true as in_family,
+                    u.badge_text, u.badge_color
                 FROM {SCHEMA}.users u
                 JOIN {SCHEMA}.family_members fm ON fm.member_id = u.id AND fm.user_id = %s
                 WHERE u.id != %s ORDER BY u.display_name
@@ -398,7 +400,8 @@ def handler(event: dict, context) -> dict:
         users = [{
             "id": r[0], "displayName": r[1], "avatar": r[2] or "👤",
             "city": r[3] or "", "onlineStatus": format_online(r[4]),
-            "role": r[5] or "member", "inFamily": r[6]
+            "role": r[5] or "member", "inFamily": r[6],
+            "badgeText": r[7] or "", "badgeColor": r[8] or ""
         } for r in rows]
         return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": users, "isAdmin": is_admin})}
 
@@ -410,7 +413,8 @@ def handler(event: dict, context) -> dict:
             return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": []})}
         cur.execute(f"""
             SELECT u.id, u.display_name, u.avatar, u.city, u.last_seen, u.role,
-                EXISTS(SELECT 1 FROM {SCHEMA}.family_members fm WHERE fm.user_id = %s AND fm.member_id = u.id) as in_family
+                EXISTS(SELECT 1 FROM {SCHEMA}.family_members fm WHERE fm.user_id = %s AND fm.member_id = u.id) as in_family,
+                u.badge_text, u.badge_color
             FROM {SCHEMA}.users u
             WHERE u.id != %s AND (LOWER(u.display_name) LIKE %s OR LOWER(u.username) LIKE %s)
             ORDER BY u.display_name LIMIT 20
@@ -420,7 +424,8 @@ def handler(event: dict, context) -> dict:
         users = [{
             "id": r[0], "displayName": r[1], "avatar": r[2] or "👤",
             "city": r[3] or "", "onlineStatus": format_online(r[4]),
-            "role": r[5] or "member", "inFamily": r[6]
+            "role": r[5] or "member", "inFamily": r[6],
+            "badgeText": r[7] or "", "badgeColor": r[8] or ""
         } for r in rows]
         return {"statusCode": 200, "headers": cors(), "body": json.dumps({"users": users})}
 

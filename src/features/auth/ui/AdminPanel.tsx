@@ -1,7 +1,18 @@
 import { useState, useEffect } from "react";
 import Icon from "@/shared/ui/icon";
 import Avatar from "@/shared/ui/Avatar";
-import { User, listUsers, createUser, deleteUser } from "@/shared/api";
+import { User, listUsers, createUser, deleteUser, updateBadge } from "@/shared/api";
+
+const BADGE_COLORS = [
+  { label: "Синий",    bg: "hsl(210,90%,92%)", text: "hsl(210,90%,35%)" },
+  { label: "Оранжевый", bg: "hsl(22,85%,92%)",  text: "hsl(22,85%,40%)"  },
+  { label: "Зелёный",  bg: "hsl(142,55%,90%)", text: "hsl(142,60%,32%)" },
+  { label: "Красный",  bg: "hsl(0,70%,92%)",   text: "hsl(0,70%,42%)"   },
+  { label: "Фиолет.",  bg: "hsl(270,55%,92%)", text: "hsl(270,60%,40%)" },
+  { label: "Розовый",  bg: "hsl(340,65%,92%)", text: "hsl(340,65%,40%)" },
+  { label: "Жёлтый",  bg: "hsl(50,90%,88%)",  text: "hsl(40,80%,35%)"  },
+  { label: "Серый",    bg: "hsl(0,0%,90%)",    text: "hsl(0,0%,38%)"    },
+];
 
 const AVATARS = ["👨", "👩", "👧", "👦", "👴", "👵", "🧑", "👶", "🧒"];
 const ROLES = [
@@ -9,6 +20,7 @@ const ROLES = [
   { value: "admin", label: "Администратор" },
 ];
 
+type BadgeModal = { user: User; text: string; color: typeof BADGE_COLORS[0] };
 type Props = { onBack: () => void };
 
 export default function AdminPanel({ onBack }: Props) {
@@ -18,6 +30,8 @@ export default function AdminPanel({ onBack }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [badgeModal, setBadgeModal] = useState<BadgeModal | null>(null);
+  const [savingBadge, setSavingBadge] = useState(false);
 
   const [form, setForm] = useState({
     username: "", displayName: "", password: "", role: "member",
@@ -67,6 +81,30 @@ export default function AdminPanel({ onBack }: Props) {
       load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Ошибка удаления");
+    }
+  };
+
+  const openBadgeModal = (u: User) => {
+    const existingColor = BADGE_COLORS.find(c => c.bg === u.badgeColor) || BADGE_COLORS[0];
+    setBadgeModal({ user: u, text: u.badgeText || "", color: existingColor });
+  };
+
+  const handleSaveBadge = async () => {
+    if (!badgeModal) return;
+    setSavingBadge(true);
+    try {
+      await updateBadge(badgeModal.user.id, badgeModal.text, badgeModal.text ? badgeModal.color.bg : "");
+      setUsers(prev => prev.map(u =>
+        u.id === badgeModal.user.id
+          ? { ...u, badgeText: badgeModal.text, badgeColor: badgeModal.text ? badgeModal.color.bg : "" }
+          : u
+      ));
+      setSuccess(`Бейджик для «${badgeModal.user.displayName}» обновлён`);
+      setBadgeModal(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Ошибка");
+    } finally {
+      setSavingBadge(false);
     }
   };
 
@@ -195,16 +233,24 @@ export default function AdminPanel({ onBack }: Props) {
                   style={{ background: "hsl(35,45%,90%)" }}
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <p className="text-sm text-foreground truncate" style={{ fontWeight: 700 }}>{u.displayName}</p>
                     {u.role === "admin" && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-md flex-shrink-0" style={{ background: "hsl(22,85%,92%)", color: "hsl(22,85%,45%)", fontWeight: 700 }}>
                         ADMIN
                       </span>
                     )}
+                    {u.badgeText && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-md flex-shrink-0" style={{ background: u.badgeColor || "hsl(210,90%,92%)", color: BADGE_COLORS.find(c => c.bg === u.badgeColor)?.text || "hsl(210,90%,35%)", fontWeight: 700 }}>
+                        {u.badgeText}
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">@{u.username}{u.city ? ` · ${u.city}` : ""}</p>
                 </div>
+                <button onClick={() => openBadgeModal(u)} className="p-2 rounded-xl hover:bg-muted transition-colors flex-shrink-0" title="Редактировать бейджик">
+                  <Icon name="Tag" size={16} style={{ color: "hsl(210,70%,55%)" }} />
+                </button>
                 <button onClick={() => handleDelete(u)} className="p-2 rounded-xl hover:bg-red-50 transition-colors flex-shrink-0">
                   <Icon name="Trash2" size={16} style={{ color: "hsl(0,65%,60%)" }} />
                 </button>
@@ -213,6 +259,86 @@ export default function AdminPanel({ onBack }: Props) {
           </div>
         )}
       </div>
+
+      {/* Модалка редактирования бейджика */}
+      {badgeModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.45)" }} onClick={() => setBadgeModal(null)}>
+          <div
+            className="w-full max-w-sm bg-white rounded-t-3xl px-5 pt-5 pb-8 animate-slide-up"
+            style={{ boxShadow: "0 -8px 32px rgba(0,0,0,0.12)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-base text-foreground" style={{ fontWeight: 700 }}>
+                Бейджик — {badgeModal.user.displayName}
+              </p>
+              <button onClick={() => setBadgeModal(null)}>
+                <Icon name="X" size={18} style={{ color: "hsl(25,15%,60%)" }} />
+              </button>
+            </div>
+
+            {/* Предпросмотр */}
+            <div className="flex items-center justify-center py-3 mb-4 rounded-2xl" style={{ background: "hsl(35,30%,96%)" }}>
+              {badgeModal.text ? (
+                <span className="text-sm px-3 py-1 rounded-xl" style={{ background: badgeModal.color.bg, color: badgeModal.color.text, fontWeight: 700 }}>
+                  {badgeModal.text}
+                </span>
+              ) : (
+                <p className="text-xs text-muted-foreground">Бейджик не задан</p>
+              )}
+            </div>
+
+            {/* Текст */}
+            <p className="text-xs text-muted-foreground mb-1.5" style={{ fontWeight: 600 }}>Текст бейджика</p>
+            <input
+              value={badgeModal.text}
+              onChange={e => setBadgeModal(m => m ? { ...m, text: e.target.value.slice(0, 32) } : m)}
+              placeholder="Например: VIP, Модератор..."
+              className="w-full bg-muted rounded-xl px-3 py-2.5 text-sm outline-none text-foreground placeholder:text-muted-foreground mb-4"
+            />
+
+            {/* Палитра цветов */}
+            <p className="text-xs text-muted-foreground mb-2" style={{ fontWeight: 600 }}>Цвет бейджика</p>
+            <div className="grid grid-cols-4 gap-2 mb-5">
+              {BADGE_COLORS.map(c => (
+                <button
+                  key={c.label}
+                  onClick={() => setBadgeModal(m => m ? { ...m, color: c } : m)}
+                  className="py-1.5 rounded-xl text-[11px] font-semibold transition-all"
+                  style={{
+                    background: c.bg,
+                    color: c.text,
+                    outline: badgeModal.color.bg === c.bg ? `2px solid ${c.text}` : "2px solid transparent",
+                    outlineOffset: "2px",
+                  }}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              {badgeModal.text && (
+                <button
+                  onClick={() => setBadgeModal(m => m ? { ...m, text: "" } : m)}
+                  className="flex-1 py-2.5 rounded-2xl text-sm transition-all"
+                  style={{ background: "hsl(0,70%,94%)", color: "hsl(0,70%,50%)", fontWeight: 600 }}
+                >
+                  Удалить
+                </button>
+              )}
+              <button
+                onClick={handleSaveBadge}
+                disabled={savingBadge}
+                className="flex-1 py-2.5 rounded-2xl text-white text-sm transition-all"
+                style={{ background: savingBadge ? "hsl(22,40%,75%)" : "hsl(22,85%,62%)", fontWeight: 700 }}
+              >
+                {savingBadge ? "Сохраняем..." : "Сохранить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
